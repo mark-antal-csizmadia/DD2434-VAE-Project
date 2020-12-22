@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as mlp
 from random import randrange
-
+from VAE import autoencoder
 
 def createRandomBatch(datax, datay, num_samples=100):
     '''
@@ -58,3 +58,10 @@ if __name__ == "__main__":
     x_test = tf.expand_dims(x_test, axis=-1)
 
     batchx, batchy = createRandomBatch(x_train, y_train, 100)
+
+    input_dim = (x_train.shape[1] * x_train.shape[1],)
+    hidden_dim = 512
+    latent_dim = 2
+    
+    print(autoencoder(input_dim,hidden_dim,latent_dim))
+    
