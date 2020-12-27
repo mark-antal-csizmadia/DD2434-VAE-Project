@@ -50,9 +50,9 @@ def autoencoder(input_dim, hidden_dim, latent_dim=2):
     '''
     # Layers
     input_layer = Input(shape=input_dim)
-    x = Dense(hidden_dim, activation='relu')(input_layer)
-    mu = Dense(latent_dim)(x)
-    sigma = Dense(latent_dim)(x)
+    hidden_layer = Dense(hidden_dim, activation='relu')(input_layer)
+    mu = Dense(latent_dim)(hidden_layer)
+    sigma = Dense(latent_dim)(hidden_layer)
 
     # Reparametrization trick, pushing the sampling out as input
     # (Lambda layer used to do operations on a tensor)
