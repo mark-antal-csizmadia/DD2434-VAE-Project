@@ -3,7 +3,8 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as mlp
 from random import randrange
-from VAE import autoencoder
+from VAE import autoencoder, autodecoder
+
 
 def createRandomBatch(datax, datay, num_samples=100):
     '''
@@ -53,15 +54,20 @@ if __name__ == "__main__":
     x_train = x_train / 255.0
     x_test = x_test / 255.0
 
-    # Expand dimensions (2D -> 3D) for NN input
-    x_train = tf.expand_dims(x_train, axis=-1)
-    x_test = tf.expand_dims(x_test, axis=-1)
+    # Reshape inputs
+    trainX = x_train.reshape(
+        (x_train.shape[0], x_train.shape[1], x_train.shape[1], 1))
+    testX = x_test.reshape(
+        (x_test.shape[0], x_test.shape[1], x_test.shape[1], 1))
 
     batchx, batchy = createRandomBatch(x_train, y_train, 100)
 
-    input_dim = (x_train.shape[1] * x_train.shape[1],)
+    input_dim = (x_train.shape[1], x_train.shape[1], 1)
     hidden_dim = 512
     latent_dim = 2
-    
-    print(autoencoder(input_dim,hidden_dim,latent_dim))
-    
+
+    # Encoder + Decoder
+    encoder = autoencoder(input_dim, hidden_dim, latent_dim)
+    decoder = autodecoder(input_dim, hidden_dim, latent_dim)
+
+    # VAE Model
