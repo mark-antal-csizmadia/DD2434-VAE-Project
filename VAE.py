@@ -17,6 +17,8 @@ def get_latent(gauss_params):
         -----------
         z : Tensor
             latent vector sampled after encoding the data
+        KLDivergence_Loss : Tensor
+            Computed Kullback Leibler Divergence on the samples
     '''
 
     # Parameters of q(z|x) (equation 9)
@@ -26,7 +28,9 @@ def get_latent(gauss_params):
     eps = kb.random_normal(shape=(kb.shape(mu)[0], kb.shape(mu)[1]))
     z = mu + sigma * eps
 
-    return z
+    # Computes KL Divergence Loss (First part of equation 24)
+    KLDivergence_Loss = -0.5*(kb.sum((1+kb.log(kb.square(sigma))-kb.square(mu)-kb.square(sigma)), axis=-1))  
+    return z, KLDivergence_Loss
 
 
 def autoencoder(input_dim, hidden_dim, latent_dim=2):
