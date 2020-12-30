@@ -29,8 +29,9 @@ def get_latent(gauss_params):
     z = mu + sigma * eps
 
     # Computes KL Divergence Loss (First part of equation 24)
-    KLDivergence_Loss = -0.5*(kb.sum((1+kb.log(kb.square(sigma))-kb.square(mu)-kb.square(sigma)), axis=-1))  
-    return z, KLDivergence_Loss
+    # KLDivergence_Loss = -0.5 * \
+    #    (kb.sum((1+kb.log(kb.square(sigma))-kb.square(mu)-kb.square(sigma)), axis=-1))
+    return z
 
 
 def autoencoder(input_dim, hidden_dim, latent_dim=2):
@@ -66,8 +67,10 @@ def autoencoder(input_dim, hidden_dim, latent_dim=2):
                     name="autoencoder")  # Create model
     # encoder.summary()
 
+    KLDivergence_Loss = -0.5 * \
+        (kb.sum((1+kb.log(kb.square(sigma))-kb.square(mu)-kb.square(sigma)), axis=-1))
 
-    return encoder
+    return encoder, KLDivergence_Loss
 
 
 def autodecoder(input_dim, hidden_dim, latent_dim=2):
@@ -99,7 +102,8 @@ def autodecoder(input_dim, hidden_dim, latent_dim=2):
 
     return decoder
 
-def VAE_loss(input_y, decoded_y, KLDivergence_Loss = KLDivergence_Loss):
+
+def VAE_loss(input_y, decoded_y, KLDivergence_Loss):
     '''
         Function to calculate the models reconstruction loss
 
@@ -120,7 +124,7 @@ def VAE_loss(input_y, decoded_y, KLDivergence_Loss = KLDivergence_Loss):
 
     '''
 
-    Crossentropy_Loss = (-1/input_y.shape[0]) * kb.sum((input_y * kb.log(decoded_y)) + ((1-input_y)*kb.log(1-decoded_y)))
+    Crossentropy_Loss = (-1/input_y.shape[0]) * kb.sum(
+        (input_y * kb.log(decoded_y)) + ((1-input_y)*kb.log(1-decoded_y)))
     VAE_Loss = Crossentropy_Loss + KLDivergence_Loss
     return VAE_Loss
-

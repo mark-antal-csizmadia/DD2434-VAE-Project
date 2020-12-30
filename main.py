@@ -1,9 +1,10 @@
 import tensorflow as tf
-#from keras.datasets import mnist
 import numpy as np
 import matplotlib.pyplot as mlp
 from random import randrange
-from VAE import autoencoder, autodecoder
+from VAE import autoencoder, autodecoder, VAE_loss
+from keras.models import Model
+from keras.layers import Input
 
 
 def createRandomBatch(datax, datay, num_samples=100):
@@ -66,8 +67,19 @@ if __name__ == "__main__":
     hidden_dim = 512
     latent_dim = 2
 
-    # Encoder + Decoder
-    encoder = autoencoder(input_dim, hidden_dim, latent_dim)
+    # Encoder + Decoder Model
+    encoder, kl_loss = autoencoder(input_dim, hidden_dim, latent_dim)
     decoder = autodecoder(input_dim, hidden_dim, latent_dim)
 
     # VAE Model
+    vae_input = Input(shape=input_dim)
+    vae_encoder = encoder(vae_input)
+    # We only need to take in consideration the last tensor
+    vae_encoder = vae_encoder[-1]
+    vae_decoder = decoder(vae_encoder)
+
+    print(vae_decoder.shape)
+    # vae_loss = VAE_loss(y_train, vae_decoder, kl_loss) <- PROBLEM (SIZE OF INPUTS)
+    #vae = Model(vae_input, decoder)
+    #vae.compile(optimizer='SGD', loss=vae_loss)
+    #vae.fit(x_train, batch=100)
