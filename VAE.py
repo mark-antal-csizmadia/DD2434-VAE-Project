@@ -105,10 +105,10 @@ def VAE_loss(input_y, decoded_y, KLDivergence_Loss = KLDivergence_Loss):
 
         Parameters
         -----------
-        input : Keras Model
-                  NN Model of the encoding for the VAE. Contains the output of this process.
-        decoded_output : Keras Model
-                  NN Model of the decoding for the VAE. Contains the output of this process.
+        input_y : input data y value
+
+        decoded_y : decoded y 
+
         KLDivergence_Loss : Tensor
             Computed Kullback Leibler Divergence on the samples (taken from get_latent())
 
