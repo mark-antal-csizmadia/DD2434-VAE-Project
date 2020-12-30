@@ -23,6 +23,7 @@ pip install -r requirements.txt
 Describe usage, for instance:
 
 ```bash
+cd DD2434-VAE-Project
 python main.py
 ```
 
