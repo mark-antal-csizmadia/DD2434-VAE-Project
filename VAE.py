@@ -66,6 +66,7 @@ def autoencoder(input_dim, hidden_dim, latent_dim=2):
                     name="autoencoder")  # Create model
     # encoder.summary()
 
+
     return encoder
 
 
@@ -97,3 +98,29 @@ def autodecoder(input_dim, hidden_dim, latent_dim=2):
     # decoder.summary()
 
     return decoder
+
+def VAE_loss(input_y, decoded_y, KLDivergence_Loss = KLDivergence_Loss):
+    '''
+        Function to calculate the models reconstruction loss
+
+        Parameters
+        -----------
+        input : Keras Model
+                  NN Model of the encoding for the VAE. Contains the output of this process.
+        decoded_output : Keras Model
+                  NN Model of the decoding for the VAE. Contains the output of this process.
+        KLDivergence_Loss : Tensor
+            Computed Kullback Leibler Divergence on the samples (taken from get_latent())
+
+        Output
+        -----------
+        VAE_loss : 
+                  The models computed reconstructed loss
+    # formula for Binary Crossentropy  is taken from: https://peltarion.com/knowledge-center/documentation/modeling-view/build-an-ai-model/loss-functions/binary-crossentropy
+
+    '''
+
+    Crossentropy_Loss = (-1/input_y.shape[0]) * kb.sum((input_y * kb.log(decoded_y)) + ((1-input_y)*kb.log(1-decoded_y)))
+    VAE_Loss = Crossentropy_Loss + KLDivergence_Loss
+    return VAE_Loss
+
