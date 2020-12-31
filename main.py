@@ -63,23 +63,25 @@ if __name__ == "__main__":
 
     batchx, batchy = createRandomBatch(x_train, y_train, 100)
 
-    input_dim = (x_train.shape[1], x_train.shape[1], 1)
+    input_dim = (x_train.shape[1]*x_train.shape[1],)
     hidden_dim = 512
     latent_dim = 2
 
     # Encoder + Decoder Model
-    encoder, kl_loss = autoencoder(input_dim, hidden_dim, latent_dim)
+    encoder, kl_loss, vae_input = autoencoder(
+        input_dim, hidden_dim, latent_dim)
     decoder = autodecoder(input_dim, hidden_dim, latent_dim)
 
     # VAE Model
-    vae_input = Input(shape=input_dim)
     vae_encoder = encoder(vae_input)
     # We only need to take in consideration the last tensor
     vae_encoder = vae_encoder[-1]
     vae_decoder = decoder(vae_encoder)
 
-    print(vae_decoder.shape)
-    # vae_loss = VAE_loss(y_train, vae_decoder, kl_loss) <- PROBLEM (SIZE OF INPUTS)
-    #vae = Model(vae_input, decoder)
-    #vae.compile(optimizer='SGD', loss=vae_loss)
-    #vae.fit(x_train, batch=100)
+    vae_loss = VAE_loss(vae_input, vae_decoder, kl_loss)
+    vae = Model(vae_input, vae_decoder)
+
+    # Getting error here
+    vae.add_loss(vae_loss)
+    vae.compile(optimizer='SGD')
+    # vae.fit(x_train)
