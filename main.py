@@ -5,6 +5,7 @@ from random import randrange
 from VAE import autoencoder, autodecoder, VAE_loss
 from keras.models import Model
 from keras.layers import Input
+from keras.utils import plot_model
 
 
 def createRandomBatch(datax, datay, num_samples=100):
@@ -80,6 +81,8 @@ if __name__ == "__main__":
 
     vae_loss = VAE_loss(vae_input, vae_decoder, kl_loss)
     vae = Model(vae_input, vae_decoder)
+    # Save .png of model. Uncomment if not needed.
+    plot_model(vae, to_file='vae.png', show_shapes=True)
 
     # Getting error here
     vae.add_loss(vae_loss)
