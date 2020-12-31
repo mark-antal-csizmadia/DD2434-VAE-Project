@@ -81,6 +81,6 @@ if __name__ == "__main__":
     vae_loss = VAE_loss(vae_input, vae_decoder, kl_loss)
     vae = Model(vae_input, vae_decoder)
 
-    # Getting error here  
+    # Getting error here   
     #vae.compile(optimizer='SGD', loss=vae_loss)
     #vae.fit(x_train, batch=100)
