@@ -6,7 +6,6 @@ from VAE import autoencoder, autodecoder, VAE_loss
 from keras.models import Model
 from keras.layers import Input
 
-
 def createRandomBatch(datax, datay, num_samples=100):
     '''
         Create random batch of datax samples
@@ -39,6 +38,7 @@ def createRandomBatch(datax, datay, num_samples=100):
 
 
 if __name__ == "__main__":
+
     mnist = tf.keras.datasets.mnist
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
     (training_samples, width, height) = x_train.shape
@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     batchx, batchy = createRandomBatch(x_train, y_train, 100)
 
-    input_dim = (x_train.shape[1], x_train.shape[1], 1)
+    input_dim = (x_train.shape[1]*x_train.shape[1],)
     hidden_dim = 512
     latent_dim = 2
 
@@ -78,8 +78,9 @@ if __name__ == "__main__":
     vae_encoder = vae_encoder[-1]
     vae_decoder = decoder(vae_encoder)
 
-    print(vae_decoder.shape)
-    # vae_loss = VAE_loss(y_train, vae_decoder, kl_loss) <- PROBLEM (SIZE OF INPUTS)
-    #vae = Model(vae_input, decoder)
+    vae_loss = VAE_loss(vae_input, vae_decoder, kl_loss)
+    vae = Model(vae_input, vae_decoder)
+
+    # Getting error here
     #vae.compile(optimizer='SGD', loss=vae_loss)
     #vae.fit(x_train, batch=100)

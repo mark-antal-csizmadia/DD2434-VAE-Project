@@ -95,7 +95,7 @@ def autodecoder(input_dim, hidden_dim, latent_dim=2):
     # Layers
     input_layer = Input(shape=(latent_dim,))
     x = Dense(hidden_dim, activation='relu')(input_layer)
-    out = Dense(input_dim[1]*input_dim[1], activation='sigmoid')(x)
+    out = Dense(input_dim[0], activation='sigmoid')(x)
 
     decoder = Model(input_layer, out, name="autodecoder")   # Create model
     # decoder.summary()
@@ -124,7 +124,7 @@ def VAE_loss(input_y, decoded_y, KLDivergence_Loss):
 
     '''
 
-    Crossentropy_Loss = (-1/input_y.shape[0]) * kb.sum(
+    Crossentropy_Loss = (-1/input_y.shape[1]) * kb.sum(
         (input_y * kb.log(decoded_y)) + ((1-input_y)*kb.log(1-decoded_y)))
     VAE_Loss = Crossentropy_Loss + KLDivergence_Loss
     return VAE_Loss
