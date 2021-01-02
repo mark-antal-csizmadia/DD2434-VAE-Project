@@ -2,6 +2,8 @@ import keras
 from keras.layers import Input, Dense, Lambda
 from keras.models import Model
 from keras import backend as kb
+import tensorflow as tf
+from keras.utils import to_categorical
 
 
 def get_latent(gauss_params):
@@ -55,9 +57,10 @@ def autoencoder(input_dim, hidden_dim, latent_dim=2):
     '''
     # Layers
     input_layer = Input(shape=input_dim)
-    hidden_layer = Dense(hidden_dim, activation='relu')(input_layer)
-    mu = Dense(latent_dim)(hidden_layer)
-    sigma = Dense(latent_dim)(hidden_layer)
+    initializer = tf.initializers.VarianceScaling(scale=2.0)
+    hidden_layer = Dense(hidden_dim, activation='relu', kernel_initializer=initializer)(input_layer)
+    mu = Dense(latent_dim, kernel_initializer=initializer)(hidden_layer)
+    sigma = Dense(latent_dim, kernel_initializer=initializer)(hidden_layer)
 
     # Reparametrization trick, pushing the sampling out as input
     # (Lambda layer used to do operations on a tensor)
@@ -94,8 +97,9 @@ def autodecoder(input_dim, hidden_dim, latent_dim=2):
     '''
     # Layers
     input_layer = Input(shape=(latent_dim,))
-    x = Dense(hidden_dim, activation='relu')(input_layer)
-    out = Dense(input_dim[0], activation='sigmoid')(x)  # Bernoulli MLP
+    initializer = tf.initializers.VarianceScaling(scale=2.0)
+    x = Dense(hidden_dim, activation='relu', kernel_initializer=initializer)(input_layer)
+    out = Dense(input_dim[0], activation='sigmoid', kernel_initializer=initializer)(x)  # Bernoulli MLP
 
     decoder = Model(input_layer, out, name="autodecoder")   # Create model
     # decoder.summary()
@@ -126,7 +130,13 @@ def VAE_loss(input_y, decoded_y, KLDivergence_Loss):
     #Crossentropy_Loss = keras.losses.binary_crossentropy(input_y, decoded_y)
     # Crossentropy_Loss = (-1/input_y.shape[1]) * kb.sum(
     #    (input_y * kb.log(decoded_y)) + ((1-input_y)*kb.log(1-decoded_y)))
-    Crossentropy_Loss = kb.max(decoded_y, 0)-decoded_y * \
-        input_y + kb.log(1+kb.exp((-1)*kb.abs(decoded_y)))
+    # Crossentropy_Loss = kb.max(decoded_y, 0)-decoded_y * \
+    #     input_y + kb.log(1+kb.exp((-1)*kb.abs(decoded_y)))
+    # epsilon to avoid log(0) -> nan
+    epsilon = 10e-15
+    # New cross entropy loss yields numbers similar in magnitude to the keras binary_crossentropy below.
+    # Crossentropy_Loss = tf.keras.losses.binary_crossentropy(input_y, decoded_y)
+    Crossentropy_Loss = tf.reduce_mean(-input_y * kb.log(decoded_y + epsilon) - (1 - input_y) * kb.log(1 - decoded_y + epsilon))
+
     VAE_Loss = kb.mean(kb.mean(Crossentropy_Loss) + KLDivergence_Loss, axis=-1)
     return VAE_Loss

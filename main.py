@@ -6,6 +6,7 @@ from VAE import autoencoder, autodecoder, VAE_loss
 from keras.models import Model
 from keras.layers import Input
 from keras.utils import plot_model
+from keras.optimizers import Adam
 
 
 def createRandomBatch(datax, datay, num_samples=100):
@@ -71,7 +72,20 @@ if __name__ == "__main__":
     # Save .png of model. Uncomment if not needed.
     #plot_model(vae, to_file='vae.png', show_shapes=True)
 
-    # Getting error here
     vae.add_loss(vae_loss)
-    vae.compile(optimizer='SGD')
-    vae.fit(xTRAIN,xTRAIN,epochs=10,batch_size=100)
+    optimizer = Adam(learning_rate=1e-3)
+    vae.compile(optimizer=optimizer)
+    # Always do minibatches that are a power of 2 and try to be around 16-64
+    # https://twitter.com/ylecun/status/989610208497360896?lang=en
+    vae.fit(xTRAIN, xTRAIN, epochs=10, batch_size=32, shuffle=True)
+
+    # Reconstruct training data.
+    xTRAIN_re = vae.predict(xTRAIN)
+
+    # Plot first plot_n image. idx in the loop will always start at zero.
+    plot_n = 20
+    fig, axs = mlp.subplots(plot_n, 2)
+    for idx, re in enumerate(xTRAIN_re[:plot_n]):
+        axs[idx, 0].imshow(re.reshape(28, 28))
+        axs[idx, 1].imshow(xTRAIN[idx].reshape(28, 28))
+    mlp.show()
