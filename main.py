@@ -42,28 +42,15 @@ def createRandomBatch(datax, datay, num_samples=100):
 if __name__ == "__main__":
     mnist = tf.keras.datasets.mnist
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
-    (training_samples, width, height) = x_train.shape
-    test_samples = x_test.shape[0]
 
-    # Plot MNIST data examples
-    # for i in range(12):
-    #    mlp.subplot(4, 4, 1 + i)
-    #    mlp.axis('off')
-    #    mlp.imshow(x_train[i], cmap='gray')
+    # Reshape data to (60000,784) in mnist case
+    xTRAIN = np.reshape(x_train, [-1, x_train.shape[1]*x_train.shape[1]])
+    xTEST = np.reshape(x_test, [-1, x_test.shape[1]*x_test.shape[1]])
 
-    # Normalize images (source: https://towardsdatascience.com/image-classification-in-10-minutes-with-mnist-dataset-54c35b77a38d)
-    # 255 = RGB max , this will normalize it to [0,1]
-    x_train = x_train / 255.0
-    x_test = x_test / 255.0
-
-    # Reshape inputs
-    trainX = x_train.reshape(
-        (x_train.shape[0], x_train.shape[1], x_train.shape[1], 1))
-    testX = x_test.reshape(
-        (x_test.shape[0], x_test.shape[1], x_test.shape[1], 1))
-
-    batchx, batchy = createRandomBatch(x_train, y_train, 100)
-
+    # Normalize
+    xTRAIN = xTRAIN.astype('float32') / 255
+    xTEST = xTEST.astype('float32') / 255
+    
     input_dim = (x_train.shape[1]*x_train.shape[1],)
     hidden_dim = 512
     latent_dim = 2
@@ -82,9 +69,9 @@ if __name__ == "__main__":
     vae_loss = VAE_loss(vae_input, vae_decoder, kl_loss)
     vae = Model(vae_input, vae_decoder)
     # Save .png of model. Uncomment if not needed.
-    plot_model(vae, to_file='vae.png', show_shapes=True)
+    #plot_model(vae, to_file='vae.png', show_shapes=True)
 
     # Getting error here
     vae.add_loss(vae_loss)
     vae.compile(optimizer='SGD')
-    # vae.fit(x_train)
+    vae.fit(xTRAIN,xTRAIN,epochs=10,batch_size=100)

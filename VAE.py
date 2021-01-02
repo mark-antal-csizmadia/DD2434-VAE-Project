@@ -17,8 +17,6 @@ def get_latent(gauss_params):
         -----------
         z : Tensor
             latent vector sampled after encoding the data
-        KLDivergence_Loss : Tensor
-            Computed Kullback Leibler Divergence on the samples
     '''
 
     # Parameters of q(z|x) (equation 9)
@@ -51,6 +49,8 @@ def autoencoder(input_dim, hidden_dim, latent_dim=2):
         -----------
         encoder : Keras Model
                   NN Model of the encoding for the VAE. Contains the output of this process.
+        KLDivergence_Loss : Tensor
+            Computed Kullback Leibler Divergence on the samples
 
     '''
     # Layers
@@ -68,7 +68,7 @@ def autoencoder(input_dim, hidden_dim, latent_dim=2):
     # encoder.summary()
 
     KLDivergence_Loss = -0.5 * \
-        (kb.sum((1+kb.log(kb.square(sigma))-kb.square(mu)-kb.square(sigma)), axis=-1))
+        (kb.sum((1+sigma-kb.square(mu)-kb.exp(sigma)), axis=-1))
 
     return encoder, KLDivergence_Loss, input_layer
 
@@ -95,7 +95,7 @@ def autodecoder(input_dim, hidden_dim, latent_dim=2):
     # Layers
     input_layer = Input(shape=(latent_dim,))
     x = Dense(hidden_dim, activation='relu')(input_layer)
-    out = Dense(input_dim[0], activation='sigmoid')(x)
+    out = Dense(input_dim[0], activation='sigmoid')(x)  # Bernoulli MLP
 
     decoder = Model(input_layer, out, name="autodecoder")   # Create model
     # decoder.summary()
@@ -121,10 +121,12 @@ def VAE_loss(input_y, decoded_y, KLDivergence_Loss):
         VAE_loss : 
                   The models computed reconstructed loss
     # formula for Binary Crossentropy  is taken from: https://peltarion.com/knowledge-center/documentation/modeling-view/build-an-ai-model/loss-functions/binary-crossentropy
-
+        https://www.tensorflow.org/api_docs/python/tf/nn/sigmoid_cross_entropy_with_logits
     '''
-
-    Crossentropy_Loss = (-1/input_y.shape[1]) * kb.sum(
-        (input_y * kb.log(decoded_y)) + ((1-input_y)*kb.log(1-decoded_y)))
-    VAE_Loss = Crossentropy_Loss + KLDivergence_Loss
+    #Crossentropy_Loss = keras.losses.binary_crossentropy(input_y, decoded_y)
+    # Crossentropy_Loss = (-1/input_y.shape[1]) * kb.sum(
+    #    (input_y * kb.log(decoded_y)) + ((1-input_y)*kb.log(1-decoded_y)))
+    Crossentropy_Loss = kb.max(decoded_y, 0)-decoded_y * \
+        input_y + kb.log(1+kb.exp((-1)*kb.abs(decoded_y)))
+    VAE_Loss = kb.mean(kb.mean(Crossentropy_Loss) + KLDivergence_Loss, axis=-1)
     return VAE_Loss
