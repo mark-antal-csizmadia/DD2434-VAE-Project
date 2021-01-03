@@ -195,7 +195,7 @@ if __name__ == "__main__":
     vae.compile(optimizer, loss=vae.losses)
 
     # Fit model.
-    epochs = 1
+    epochs = 50
     batch_size = 32
     vae.fit(x_train_flattened, x_train_flattened, epochs=epochs, batch_size=batch_size, shuffle=True)
 

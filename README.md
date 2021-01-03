@@ -20,14 +20,14 @@ pip install -r requirements.txt
 
 ## Usage
 
-Describe usage, for instance:
+The usage changed, there is only one script now - VAE.py. The code from the main branch has been reorganized into this one script. The code is the same, but a little more cleaned up and with more comments.
 
 ```bash
 cd DD2434-VAE-Project
-python main.py
+python VAE.py
 ```
 
-and then bla bla ...
+Try to train for 50 epoch with a batch size of 32 with the same optimizer as it is now. I start out with around 1.2928 loss, on the 2 epoch it's around 0.2682, and by the 50th epoch it's around 0.1417.
 
 ## Some other section
 
