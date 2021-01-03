@@ -1,142 +1,230 @@
-import keras
-from keras.layers import Input, Dense, Lambda
-from keras.models import Model
+from keras.layers import Dense, Lambda
+from keras.models import Model, load_model
 from keras import backend as kb
+from keras.utils import plot_model
 import tensorflow as tf
-from keras.utils import to_categorical
+import matplotlib.pyplot as plt
+import numpy as np
+import datetime
 
+# Global constants.
+# Epsilon: avoid numerical instability issues such as log(0) -> nan.
+EPSILON = 10e-12
+tf.random.set_seed(221)
 
-def get_latent(gauss_params):
-    '''
-        Function to reparametrize mu,sigma by sampling from Gaussian
+class VAE(Model):
+    """ Variational Auto-Encoder class via subclassing keras.Model.
+    """
+    def __init__(self, input_dim, encoder_hidden_dim, latent_dim, decoder_hidden_dim, name):
+        """ Init function of the VAE class.
+
+        Parameters
+        ----------
+        input_dim : int
+            The number of input dimensions, that is, the number of nodes in the first layer of the encoder and the
+            last, output layer of the decoder.
+
+        encoder_hidden_dim : int
+            The number of nodes in the hidden layer of the encoder.
+
+        latent_dim : int
+            The number of latent dimensions into which the VAE encodes the input data.
+
+        decoder_hidden_dim : int
+             The number of nodes in the hidden layer of the decoder.
+
+        name : str
+            The name of the model.
+        """
+        # Inherit everything from keras.Model.
+        super(VAE, self).__init__(name=name)
+        # Xavier initialization (https://www.deeplearning.ai/ai-notes/initialization/, see towards the end of the
+        # article)
+        self.initializer = tf.initializers.VarianceScaling(scale=2.0)
+        # Create the VAE layers.
+        self.encoder_hidden = Dense(units=encoder_hidden_dim, activation="relu", kernel_initializer=self.initializer)
+        self.mu = Dense(latent_dim, kernel_initializer=self.initializer, name="mu")
+        self.sigma = Dense(latent_dim, kernel_initializer=self.initializer, name="sigma")
+        self.z = Lambda(self.get_latent, output_shape=(latent_dim,), name="z")
+        self.decoder_hidden = Dense(decoder_hidden_dim, activation='relu', kernel_initializer=self.initializer)
+        # The decoder is a Bernoulli MLP. Has binary cross-entropy loss, see later.
+        self.reconstruction = \
+            Dense(input_dim, activation='sigmoid', kernel_initializer=self.initializer, name="reconstruction")
+
+    def get_latent(self, gauss_params):
+        """ Function to re-parametrize mu,sigma by sampling from Gaussian
 
         Parameters
         -----------
-        gauss_params : Tensor 
-                       mu and sigma of q(z|x)
+        gauss_params : tf.Tensor
+           mu and sigma of q(z|x), both have shape (batch_size, latent_dim) where batch_size is the
+            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
+            number of latent dimensions
 
-        Output
+        Returns
         -----------
-        z : Tensor
-            latent vector sampled after encoding the data
-    '''
+        z : tf.Tensor
+            latent vector sampled after encoding the data. Has shape (batch_size, latent_dim) where batch_size is the
+            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
+            number of latent dimensions
+        """
+        # Parameters of q(z|x) (equation 9)
+        mu, sigma = gauss_params
+        # Sample epsilon and calculate latent vector Z (equation 10)
+        eps = kb.random_normal(shape=(kb.shape(mu)[0], kb.shape(mu)[1]))
+        z = mu + sigma * eps
+        return z
 
-    # Parameters of q(z|x) (equation 9)
-    mu, sigma = gauss_params
-
-    # Sample epsilon and calculate latent vector Z (equation 10)
-    eps = kb.random_normal(shape=(kb.shape(mu)[0], kb.shape(mu)[1]))
-    z = mu + sigma * eps
-
-    # Computes KL Divergence Loss (First part of equation 24)
-    # KLDivergence_Loss = -0.5 * \
-    #    (kb.sum((1+kb.log(kb.square(sigma))-kb.square(mu)-kb.square(sigma)), axis=-1))
-    return z
-
-
-def autoencoder(input_dim, hidden_dim, latent_dim=2):
-    '''
-        Function to perform autoencoding
-
+    def call(self, inputs):
+        """ Overrides the call function of keras.Model via subclassing. Gets called at each optimization step.
         Parameters
-        -----------
-        input_dim : Tuple 
-                    dimension of the images as (x*y,)
-        hidden_dim : Integer
-                    Output dimension of hidden layer
-        latent_dim : Integer 
-                    Output dimension of latent layer
+        ----------
+        inputs : tf.Tensor
+            Input data. Has shape (batch_size, input_dim) where batch_size is the mini-batch size of the optimizer and
+            input_dim is the number of input nodes in the first layer of the encoder network
+        Returns
+        -------
+        reconstruction : tf.Tensor
+            Reconstruction of the input data. Has shape (batch_size, input_dim) where batch_size is the mini-batch
+            size of the optimizer and input_dim is the number of input nodes in the first layer of the encoder network
 
-        Output
-        -----------
-        encoder : Keras Model
-                  NN Model of the encoding for the VAE. Contains the output of this process.
-        KLDivergence_Loss : Tensor
-            Computed Kullback Leibler Divergence on the samples
+        """
+        # Attach model parts together (i.e.: create computation graph).
+        encoder_hidden = self.encoder_hidden(inputs)
+        mu = self.mu(encoder_hidden)
+        sigma = self.sigma(encoder_hidden)
+        z = self.z([mu, sigma])
+        decoder_hidden = self.decoder_hidden(z)
+        reconstruction = self.reconstruction(decoder_hidden)
 
-    '''
-    # Layers
-    input_layer = Input(shape=input_dim)
-    initializer = tf.initializers.VarianceScaling(scale=2.0)
-    hidden_layer = Dense(hidden_dim, activation='relu', kernel_initializer=initializer)(input_layer)
-    mu = Dense(latent_dim, kernel_initializer=initializer)(hidden_layer)
-    sigma = Dense(latent_dim, kernel_initializer=initializer)(hidden_layer)
+        # Create the loss tensors.
+        # Computes KL Divergence Loss (First part of equation 24)
+        kl_loss = kb.mean(-0.5 * kb.sum((1 + sigma - kb.square(mu) - kb.exp(sigma)), axis=-1))
+        # Computes teh Binary Cross-Entropy Loss (comes from the sigmoid activation function of the Bernoulli MLP layer
+        # called reconstruction).
+        binary_cross_entropy_loss = \
+            kb.mean(-inputs * kb.log(reconstruction + EPSILON) - (1 - inputs) * kb.log(1 - reconstruction + EPSILON))
+        # Create the overall VAE loss.
+        vae_loss = binary_cross_entropy_loss + kl_loss
+        self.add_loss(vae_loss)
 
-    # Reparametrization trick, pushing the sampling out as input
-    # (Lambda layer used to do operations on a tensor)
-    z = Lambda(get_latent, output_shape=(latent_dim,))([mu, sigma])
-
-    encoder = Model(input_layer, [mu, sigma, z],
-                    name="autoencoder")  # Create model
-    # encoder.summary()
-
-    KLDivergence_Loss = -0.5 * \
-        (kb.sum((1+sigma-kb.square(mu)-kb.exp(sigma)), axis=-1))
-
-    return encoder, KLDivergence_Loss, input_layer
+        # Return the reconstructed observations.
+        return reconstruction
 
 
-def autodecoder(input_dim, hidden_dim, latent_dim=2):
-    '''
-        Function to perform autodecoding (reconstruct latent points to original dimension)
+def plot_imgs_compare(n_imgs, x, y, x_reconstructed, save_img):
+    """ Overrides the call function of keras.Model via subclassing. Gets called at each optimization step.
+    Parameters
+    ----------
+    n_imgs : int
+        The number of images to be shown in the plot.
+    x : tf.Tensor
+        The input data of shape (n_data, height, width) where n_data is the number of images, height is the height of
+        the image in pixels, and width is the width of the image of pixels.
+        CHANGE THIS AND ADD AN RGB DIMENSION FOR THE ALGORITHM TO BE ABLE WORK WITH RGB DATA.
 
-        Parameters
-        -----------
-        input_dim : Tuple 
-                    dimension of the images as (x*y,)
-        hidden_dim : Integer
-                    Output dimension of hidden layer
-        latent_dim : Integer 
-                    Output dimension of latent layer
+    x_reconstructed : tf.Tensor
+        The reconstructed data of shape (n_data, height, width) where n_data is the number of images, height is the
+        height of the image in pixels, and width is the width of the image of pixels.
+        CHANGE THIS AND ADD AN RGB DIMENSION FOR THE ALGORITHM TO BE ABLE WORK WITH RGB DATA.
 
-        Output
-        -----------
-        decoder : Keras Model
-                  NN Model of the decoding for the VAE. Contains the output of this process.
+    y : tf.Tensor
+        The ground-truth label of the input data of shape (n_data,) where n_data is the number of images.
 
-    '''
-    # Layers
-    input_layer = Input(shape=(latent_dim,))
-    initializer = tf.initializers.VarianceScaling(scale=2.0)
-    x = Dense(hidden_dim, activation='relu', kernel_initializer=initializer)(input_layer)
-    out = Dense(input_dim[0], activation='sigmoid', kernel_initializer=initializer)(x)  # Bernoulli MLP
+    save_img : bool
+        Whether to save the generate figure or not.
 
-    decoder = Model(input_layer, out, name="autodecoder")   # Create model
-    # decoder.summary()
+    Returns
+    -------
+    None
 
-    return decoder
+    """
+    # Extract n_imgs input observations and reconstructions at random indices.
+    n_imgs_all = x.shape[0]
+    idx_imgs = np.random.choice(n_imgs_all, n_imgs)
+    x_show = x[idx_imgs]
+    y_show = y[idx_imgs]
+    x_reconstructed_show = x_reconstructed[idx_imgs]
+
+    # Create figure.
+    fig_height = n_imgs*5
+    fig_width = 10
+    fig, axs = plt.subplots(n_imgs, 2, figsize=(fig_height, fig_width))
+    fig.tight_layout()
+
+    # Plot the subplots of the figure.
+    for n_idx, _ in enumerate(idx_imgs):
+        ax_left = axs[n_idx, 0]
+        ax_right = axs[n_idx, 1]
+        ax_left.imshow(x_reconstructed_show[n_idx])
+        ax_right.imshow(x_show[n_idx])
+        ax_left.set_title(f"Reconstructed")
+        ax_right.set_title(f"Label: {y_show[n_idx]}")
+        ax_left.axis('off')
+        ax_right.axis('off')
+
+    # Save image if desired.
+    if save_img:
+        plt.savefig("fig.png")
+
+    plt.show()
 
 
-def VAE_loss(input_y, decoded_y, KLDivergence_Loss):
-    '''
-        Function to calculate the models reconstruction loss
+if __name__ == "__main__":
+    # Import the data set.
+    mnist = tf.keras.datasets.mnist
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    n_data, height, width = x_train.shape
+    input_dim = height * width
+    # Reshape data to (60000,784) in mnist case
+    x_train_flattened = x_train.reshape(-1, input_dim).astype("float32") / 255
 
-        Parameters
-        -----------
-        input_y : input data y value
+    # Create the VAE.
+    encoder_hidden_dim = 512
+    latent_dim = 64
+    decoder_hidden_dim = 512
+    vae = VAE(input_dim=input_dim, encoder_hidden_dim=encoder_hidden_dim, latent_dim=latent_dim,
+              decoder_hidden_dim=decoder_hidden_dim, name="vae")
+    # Plot model if wanted. Something is not okay with this now, leave it commented.
+    # plot_model(vae, to_file='vae_viz.png', show_shapes=True)
 
-        decoded_y : decoded y 
+    # Create optimizer.
+    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
 
-        KLDivergence_Loss : Tensor
-            Computed Kullback Leibler Divergence on the samples (taken from get_latent())
+    # Compile model.
+    vae.compile(optimizer, loss=vae.losses)
 
-        Output
-        -----------
-        VAE_loss : 
-                  The models computed reconstructed loss
-    # formula for Binary Crossentropy  is taken from: https://peltarion.com/knowledge-center/documentation/modeling-view/build-an-ai-model/loss-functions/binary-crossentropy
-        https://www.tensorflow.org/api_docs/python/tf/nn/sigmoid_cross_entropy_with_logits
-    '''
-    #Crossentropy_Loss = keras.losses.binary_crossentropy(input_y, decoded_y)
-    # Crossentropy_Loss = (-1/input_y.shape[1]) * kb.sum(
-    #    (input_y * kb.log(decoded_y)) + ((1-input_y)*kb.log(1-decoded_y)))
-    # Crossentropy_Loss = kb.max(decoded_y, 0)-decoded_y * \
-    #     input_y + kb.log(1+kb.exp((-1)*kb.abs(decoded_y)))
-    # epsilon to avoid log(0) -> nan
-    epsilon = 10e-15
-    # New cross entropy loss yields numbers similar in magnitude to the keras binary_crossentropy below.
-    # Crossentropy_Loss = tf.keras.losses.binary_crossentropy(input_y, decoded_y)
-    Crossentropy_Loss = tf.reduce_mean(-input_y * kb.log(decoded_y + epsilon) - (1 - input_y) * kb.log(1 - decoded_y + epsilon))
+    # Fit model.
+    epochs = 1
+    batch_size = 32
+    vae.fit(x_train_flattened, x_train_flattened, epochs=epochs, batch_size=batch_size, shuffle=True)
 
-    VAE_Loss = kb.mean(kb.mean(Crossentropy_Loss) + KLDivergence_Loss, axis=-1)
-    return VAE_Loss
+    # Reconstruct training data.
+    x_train_reconstructed_flattened = vae.predict(x_train_flattened)
+    x_train_reconstructed = x_train_reconstructed_flattened.reshape(n_data, height, width)
+
+    # Visualize the reconstructed images.
+    plot_imgs_compare(n_imgs=10, x=x_train, y=y_train, x_reconstructed=x_train_reconstructed, save_img=True)
+
+    """
+    This part does not work yet.
+    # This part shows how to save a model and then use it for inference again without further training. A saved model
+    # can be further trained as well.
+    st = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    model_name = "vae"
+    vae.save(model_name)
+
+    # It can be used to reconstruct the model identically.
+    #vae_reconstructed = load_model(model_name)
+    # It's tricky to save and load models with Lambda layers.
+    vae_reconstructed = load_model(model_name, custom_objects={'get_latent': VAE.get_latent})
+
+    # Let's check:
+    test_input = x_train_flattened[:10]
+    test_target = y_train[:10]
+    np.testing.assert_allclose(vae.predict(test_input), vae_reconstructed.predict(test_input))
+
+    # The reconstructed model is already compiled and has retained the optimizer
+    # state, so training can resume:
+    vae_reconstructed.fit(test_input, test_target)
+    test_input_reconstructed = vae_reconstructed.predict(test_input)"""
