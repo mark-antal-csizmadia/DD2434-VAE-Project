@@ -13,9 +13,11 @@ import scipy.io
 EPSILON = 10e-12
 tf.random.set_seed(221)
 
+
 class VAE(Model):
     """ Variational Auto-Encoder class via subclassing keras.Model.
     """
+
     def __init__(self, input_dim, encoder_hidden_dim, latent_dim, decoder_hidden_dim, name):
         """ Init function of the VAE class.
 
@@ -43,14 +45,19 @@ class VAE(Model):
         # article)
         self.initializer = tf.initializers.VarianceScaling(scale=2.0)
         # Create the VAE layers.
-        self.encoder_hidden = Dense(units=encoder_hidden_dim, activation="relu", kernel_initializer=self.initializer)
-        self.mu = Dense(latent_dim, kernel_initializer=self.initializer, name="mu")
-        self.sigma = Dense(latent_dim, kernel_initializer=self.initializer, name="sigma")
+        self.encoder_hidden = Dense(
+            units=encoder_hidden_dim, activation="relu", kernel_initializer=self.initializer)
+        self.mu = Dense(
+            latent_dim, kernel_initializer=self.initializer, name="mu")
+        self.sigma = Dense(
+            latent_dim, kernel_initializer=self.initializer, name="sigma")
         self.z = Lambda(self.get_latent, output_shape=(latent_dim,), name="z")
-        self.decoder_hidden = Dense(decoder_hidden_dim, activation='relu', kernel_initializer=self.initializer)
+        self.decoder_hidden = Dense(
+            decoder_hidden_dim, activation='relu', kernel_initializer=self.initializer)
         # The decoder is a Bernoulli MLP. Has binary cross-entropy loss, see later.
         self.reconstruction = \
-            Dense(input_dim, activation='sigmoid', kernel_initializer=self.initializer, name="reconstruction")
+            Dense(input_dim, activation='sigmoid',
+                  kernel_initializer=self.initializer, name="reconstruction")
 
     def get_latent(self, gauss_params):
         """ Function to re-parametrize mu,sigma by sampling from Gaussian
@@ -73,7 +80,9 @@ class VAE(Model):
         mu, sigma = gauss_params
         # Sample epsilon and calculate latent vector Z (equation 10)
         eps = kb.random_normal(shape=(kb.shape(mu)[0], kb.shape(mu)[1]))
-        z = mu + sigma * eps
+        # standard deviation = sqrt(sigma) ; using the exponential assures that the result is positive
+        std = kb.exp(0.5*sigma)
+        z = mu + std * eps
         return z
 
     def call(self, inputs):
@@ -100,13 +109,21 @@ class VAE(Model):
 
         # Create the loss tensors.
         # Computes KL Divergence Loss (First part of equation 24)
-        kl_loss = kb.mean(-0.5 * kb.sum((1 + sigma - kb.square(mu) - kb.exp(sigma)), axis=-1))
+        # kl_loss = kb.mean(-0.5 * kb.sum((1 + sigma -
+        #                                 kb.square(mu) - kb.exp(sigma)), axis=1))
+        kl_loss = kb.mean(
+            0.5 * kb.sum(-sigma + kb.exp(sigma) + kb.square(mu) - 1, axis=1))
         # Computes teh Binary Cross-Entropy Loss (comes from the sigmoid activation function of the Bernoulli MLP layer
         # called reconstruction).
-        binary_cross_entropy_loss = \
-            kb.mean(-inputs * kb.log(reconstruction + EPSILON) - (1 - inputs) * kb.log(1 - reconstruction + EPSILON))
+        # binary_cross_entropy_loss = \
+        #    kb.mean(-inputs * kb.log(reconstruction + EPSILON) -
+        #            (1 - inputs) * kb.log(1 - reconstruction + EPSILON), axis=1)
+        binary_cross_entropy_loss = kb.mean(-kb.sum(inputs * kb.log(
+            reconstruction+1e-6) + (1-inputs) * kb.log(1-reconstruction+1e-6), axis=1))
         # Create the overall VAE loss.
+        # - ELBO = KLD - Log_likelihood = BCE + KLD
         vae_loss = binary_cross_entropy_loss + kl_loss
+
         self.add_loss(vae_loss)
 
         # Return the reconstructed observations.
@@ -166,25 +183,49 @@ def plot_imgs_compare(n_imgs, x, y, x_reconstructed, save_img):
 
     # Save image if desired.
     if save_img:
-        plt.savefig("fig.png")
+        plt.savefig("images/reconstruction.png")
 
     plt.show()
 
+
+def plot_lowerbound(history):
+    """ Plot likelihood lower bound
+    Parameters
+    ----------
+    history : History
+        Training and validation history.
+    Returns
+    -------
+    None
+
+    """
+    print(type(history))
+    plt.plot(history.history['loss'])
+    plt.title('VAE Likelihood Lower Bound')
+    plt.ylabel('𝓁')
+    plt.xlabel('epoch')
+    # VALIDATION NOT WORKING ????
+    plt.legend(['train', 'val'], loc='upper left')
+    plt.savefig("images/lower_bound.png")
+    plt.show()
+
+
 def freyface():
     # Data collected from official website https://cs.nyu.edu/~roweis/data.html
-    # as a matlab file 
+    # as a matlab file
     data = scipy.io.loadmat('data/frey_rawface.mat')
     height = 20
     width = 28
     input_dim = height * width
-    data = data["ff"].T.reshape((-1,input_dim))
+    data = data["ff"].T.reshape((-1, input_dim))
     data = data.astype('float32')/255
 
     return data
 
+
 if __name__ == "__main__":
     #ff_train,ff_val = freyface()
-    
+
     # Import the data set.
     mnist = tf.keras.datasets.mnist
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
@@ -192,6 +233,7 @@ if __name__ == "__main__":
     input_dim = height * width
     # Reshape data to (60000,784) in mnist case
     x_train_flattened = x_train.reshape(-1, input_dim).astype("float32") / 255
+    x_test_flattened = x_test.reshape(-1, input_dim).astype("float32") / 255
 
     # Create the VAE.
     encoder_hidden_dim = 512
@@ -206,20 +248,23 @@ if __name__ == "__main__":
     optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
 
     # Compile model.
-    vae.compile(optimizer, loss=vae.losses)
+    vae.compile(optimizer)
 
     # Fit model.
-    epochs = 155
+    epochs = 50
     batch_size = 32
-    vae.fit(x_train_flattened, x_train_flattened, epochs=epochs, batch_size=batch_size, shuffle=True)
+    history = vae.fit(x_train_flattened, x_train_flattened,
+                      epochs=epochs, batch_size=batch_size, shuffle=True, validation_data=(x_test_flattened, x_test_flattened))
+    plot_lowerbound(history)
 
     # Reconstruct training data.
     x_train_reconstructed_flattened = vae.predict(x_train_flattened)
-    x_train_reconstructed = x_train_reconstructed_flattened.reshape(n_data, height, width)
+    x_train_reconstructed = x_train_reconstructed_flattened.reshape(
+        n_data, height, width)
 
     # Visualize the reconstructed images.
-    plot_imgs_compare(n_imgs=10, x=x_train, y=y_train,x_reconstructed=x_train_reconstructed, save_img=True)
-
+    plot_imgs_compare(n_imgs=10, x=x_train, y=y_train,
+                      x_reconstructed=x_train_reconstructed, save_img=True)
 
     """
     This part does not work yet.
