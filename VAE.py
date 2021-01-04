@@ -6,6 +6,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import numpy as np
 import datetime
+import scipy.io
 
 # Global constants.
 # Epsilon: avoid numerical instability issues such as log(0) -> nan.
@@ -169,8 +170,21 @@ def plot_imgs_compare(n_imgs, x, y, x_reconstructed, save_img):
 
     plt.show()
 
+def freyface():
+    # Data collected from official website https://cs.nyu.edu/~roweis/data.html
+    # as a matlab file 
+    data = scipy.io.loadmat('data/frey_rawface.mat')
+    height = 20
+    width = 28
+    input_dim = height * width
+    data = data["ff"].T.reshape((-1,input_dim))
+    data = data.astype('float32')/255
+
+    return data
 
 if __name__ == "__main__":
+    #ff_train,ff_val = freyface()
+    
     # Import the data set.
     mnist = tf.keras.datasets.mnist
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
@@ -195,7 +209,7 @@ if __name__ == "__main__":
     vae.compile(optimizer, loss=vae.losses)
 
     # Fit model.
-    epochs = 50
+    epochs = 155
     batch_size = 32
     vae.fit(x_train_flattened, x_train_flattened, epochs=epochs, batch_size=batch_size, shuffle=True)
 
@@ -204,7 +218,8 @@ if __name__ == "__main__":
     x_train_reconstructed = x_train_reconstructed_flattened.reshape(n_data, height, width)
 
     # Visualize the reconstructed images.
-    plot_imgs_compare(n_imgs=10, x=x_train, y=y_train, x_reconstructed=x_train_reconstructed, save_img=True)
+    plot_imgs_compare(n_imgs=10, x=x_train, y=y_train,x_reconstructed=x_train_reconstructed, save_img=True)
+
 
     """
     This part does not work yet.
