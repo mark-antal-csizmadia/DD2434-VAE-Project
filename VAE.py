@@ -199,6 +199,7 @@ def plot_lowerbound(history):
     plt.title('VAE Likelihood Lower Bound')
     plt.ylabel('𝓁')
     plt.xlabel('epoch')
+    plt.ylim(120,220)
     # VALIDATION NOT WORKING ????
     plt.legend(['train', 'val'], loc='upper left')
     plt.savefig("images/lower_bound.png")
@@ -224,6 +225,9 @@ if __name__ == "__main__":
     # Import the data set.
     mnist = tf.keras.datasets.mnist
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+    #x_train = x_train[np.random.randint(x_train.shape[0],size=1000)]
+
     n_data, height, width = x_train.shape
     input_dim = height * width
     # Reshape data to (60000,784) in mnist case
@@ -232,7 +236,7 @@ if __name__ == "__main__":
 
     # Create the VAE.
     encoder_hidden_dim = 500
-    latent_dim = 10
+    latent_dim = 3
     decoder_hidden_dim = 500
     vae = VAE(input_dim=input_dim, encoder_hidden_dim=encoder_hidden_dim, latent_dim=latent_dim,
               decoder_hidden_dim=decoder_hidden_dim, name="vae")
@@ -246,8 +250,8 @@ if __name__ == "__main__":
     vae.compile(optimizer)
 
     # Fit model.
-    epochs = 20
-    batch_size = 32
+    epochs = 200
+    batch_size = 100
     history = vae.fit(x_train_flattened, x_train_flattened,
                       epochs=epochs, batch_size=batch_size, shuffle=True, validation_data=(x_test_flattened, x_test_flattened))
     plot_lowerbound(history)
