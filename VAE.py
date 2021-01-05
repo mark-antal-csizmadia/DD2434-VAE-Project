@@ -10,7 +10,7 @@ import scipy.io
 
 # Global constants.
 # Epsilon: avoid numerical instability issues such as log(0) -> nan.
-EPSILON = 10e-12
+EPSILON = 1e-6
 tf.random.set_seed(221)
 
 
@@ -109,17 +109,12 @@ class VAE(Model):
 
         # Create the loss tensors.
         # Computes KL Divergence Loss (First part of equation 24)
-        # kl_loss = kb.mean(-0.5 * kb.sum((1 + sigma -
-        #                                 kb.square(mu) - kb.exp(sigma)), axis=1))
         kl_loss = kb.mean(
             0.5 * kb.sum(-sigma + kb.exp(sigma) + kb.square(mu) - 1, axis=1))
         # Computes teh Binary Cross-Entropy Loss (comes from the sigmoid activation function of the Bernoulli MLP layer
         # called reconstruction).
-        # binary_cross_entropy_loss = \
-        #    kb.mean(-inputs * kb.log(reconstruction + EPSILON) -
-        #            (1 - inputs) * kb.log(1 - reconstruction + EPSILON), axis=1)
         binary_cross_entropy_loss = kb.mean(-kb.sum(inputs * kb.log(
-            reconstruction+1e-6) + (1-inputs) * kb.log(1-reconstruction+1e-6), axis=1))
+            reconstruction+EPSILON) + (1-inputs) * kb.log(1-reconstruction+EPSILON), axis=1))
         # Create the overall VAE loss.
         # - ELBO = KLD - Log_likelihood = BCE + KLD
         vae_loss = binary_cross_entropy_loss + kl_loss
@@ -199,8 +194,8 @@ def plot_lowerbound(history):
     None
 
     """
-    print(type(history))
     plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
     plt.title('VAE Likelihood Lower Bound')
     plt.ylabel('𝓁')
     plt.xlabel('epoch')
@@ -236,9 +231,9 @@ if __name__ == "__main__":
     x_test_flattened = x_test.reshape(-1, input_dim).astype("float32") / 255
 
     # Create the VAE.
-    encoder_hidden_dim = 512
-    latent_dim = 64
-    decoder_hidden_dim = 512
+    encoder_hidden_dim = 500
+    latent_dim = 10
+    decoder_hidden_dim = 500
     vae = VAE(input_dim=input_dim, encoder_hidden_dim=encoder_hidden_dim, latent_dim=latent_dim,
               decoder_hidden_dim=decoder_hidden_dim, name="vae")
     # Plot model if wanted. Something is not okay with this now, leave it commented.
@@ -251,7 +246,7 @@ if __name__ == "__main__":
     vae.compile(optimizer)
 
     # Fit model.
-    epochs = 50
+    epochs = 20
     batch_size = 32
     history = vae.fit(x_train_flattened, x_train_flattened,
                       epochs=epochs, batch_size=batch_size, shuffle=True, validation_data=(x_test_flattened, x_test_flattened))
