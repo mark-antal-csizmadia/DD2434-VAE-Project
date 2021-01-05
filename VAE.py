@@ -199,8 +199,8 @@ def plot_lowerbound(history):
     plt.title('VAE Likelihood Lower Bound')
     plt.ylabel('𝓁')
     plt.xlabel('epoch')
-    plt.ylim(120,220)
-    # VALIDATION NOT WORKING ????
+    #plt.ylim(120,220)
+
     plt.legend(['train', 'val'], loc='upper left')
     plt.savefig("images/lower_bound.png")
     plt.show()
@@ -212,32 +212,45 @@ def freyface():
     data = scipy.io.loadmat('data/frey_rawface.mat')
     height = 20
     width = 28
+
     input_dim = height * width
     data = data["ff"].T.reshape((-1, input_dim))
     data = data.astype('float32')/255
 
-    return data
+    split = np.random.rand(len(data)) < 0.9
+    train = data[split]
+    test = data[~split]
 
+    return train,test,height,width
 
 if __name__ == "__main__":
-    #ff_train,ff_val = freyface()
-
+    # Uncomment for freyface
+    
+    x_train_flattened,x_test_flattened,ff_height,ff_width = freyface()
+    n_data, height, width = len(x_train_flattened),ff_height,ff_width
+    input_dim = ff_height * ff_width
+    
+    # Uncomment for mnist
+    '''
     # Import the data set.
-    mnist = tf.keras.datasets.mnist
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    #mnist = tf.keras.datasets.mnist
+    #(x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+    #n_data, height, width = x_train.shape
+
+    input_dim = height * width
+    # Reshape data to (60000,784) in mnist case
+    #x_train_flattened = x_train.reshape(-1, input_dim).astype("float32") / 255
+    #x_test_flattened = x_test.reshape(-1, input_dim).astype("float32") / 255
+    '''
 
     #x_train = x_train[np.random.randint(x_train.shape[0],size=1000)]
 
-    n_data, height, width = x_train.shape
-    input_dim = height * width
-    # Reshape data to (60000,784) in mnist case
-    x_train_flattened = x_train.reshape(-1, input_dim).astype("float32") / 255
-    x_test_flattened = x_test.reshape(-1, input_dim).astype("float32") / 255
 
     # Create the VAE.
-    encoder_hidden_dim = 500
+    encoder_hidden_dim = 100
     latent_dim = 3
-    decoder_hidden_dim = 500
+    decoder_hidden_dim = 100
     vae = VAE(input_dim=input_dim, encoder_hidden_dim=encoder_hidden_dim, latent_dim=latent_dim,
               decoder_hidden_dim=decoder_hidden_dim, name="vae")
     # Plot model if wanted. Something is not okay with this now, leave it commented.
@@ -251,7 +264,7 @@ if __name__ == "__main__":
 
     # Fit model.
     epochs = 200
-    batch_size = 100
+    batch_size = 32
     history = vae.fit(x_train_flattened, x_train_flattened,
                       epochs=epochs, batch_size=batch_size, shuffle=True, validation_data=(x_test_flattened, x_test_flattened))
     plot_lowerbound(history)
@@ -262,8 +275,9 @@ if __name__ == "__main__":
         n_data, height, width)
 
     # Visualize the reconstructed images.
-    plot_imgs_compare(n_imgs=10, x=x_train, y=y_train,
-                      x_reconstructed=x_train_reconstructed, save_img=True)
+    #plot_imgs_compare(n_imgs=10, x=x_train, y=y_train,
+    #                  x_reconstructed=x_train_reconstructed, save_img=True)
+
 
     """
     This part does not work yet.
