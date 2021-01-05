@@ -282,6 +282,7 @@ def plot_lowerbound(history, neg_elbo_values, dataset_name, latent_dim, x_axis_l
     fig_title = dataset_name_pretty + r", $N_{\mathbf{z}}$ = " + str(latent_dim)
     plt.title(fig_title)
 
+    # Set ylim if needed.
     if ylim is not None:
         plt.ylim(ylim[0], ylim[1])
 
@@ -290,45 +291,149 @@ def plot_lowerbound(history, neg_elbo_values, dataset_name, latent_dim, x_axis_l
     plt.show()
 
 
-def freyface():
+def freyface_load_data(split_train=0.9):
+    """ Loads the Frey Faces data set.
+
+    Parameters
+    ----------
+    split_train : float
+        Split the data set into training and validation set. split_train is percentage of the training partition.
+
+    Returns
+    -------
+    x_train : np.ndarray
+        Training data set of shape (n_data, height, width)
+
+    y_train : None
+        Would be the labels, but the data set has none.
+
+    x_test : np.ndarray
+        Validation data set of shape (n_data, height, width)
+
+    y_test : None
+        Would be the labels, but the data set has none.
+
+    """
     # Data collected from official website https://cs.nyu.edu/~roweis/data.html
     # as a matlab file
-    data = scipy.io.loadmat('data/frey_rawface.mat')
-    height = 20
-    width = 28
+    data_dict = scipy.io.loadmat('data/frey_rawface.mat')
+    # data_transposed shape is (image_flattened_dim, n_data).
+    data_transposed = data_dict["ff"]
+    # data_flattened shape is (n_data, image_flattened_dim).
+    data_flattened = np.transpose(data_transposed)
+    # From data set documentation.
+    height = 28
+    width = 20
+    # data shape is (n_data, height, width).
+    data = data_flattened.reshape(data_flattened.shape[0], height, width)
 
+    # Split the data set into training and validation sets.
+    split = np.random.rand(len(data)) < split_train
+    x_train, y_train = data[split], None
+    x_test, y_test = data[~split], None
+
+    return (x_train, y_train), (x_test, y_test)
+
+
+def load_dataset(dataset_name):
+    """ Wrapper function for loading a data set.
+
+    Parameters
+    ----------
+    dataset_name : str
+        The name of the data set. mnist for MNIST and frey for Frey Faces
+
+    Returns
+    -------
+    x_train : np.ndarray
+        Training data set of shape (n_data, height, width)
+
+    y_train : np.ndarray or None
+        Training labels of shape (n_data,), and None in the case of frey.
+
+    x_test : np.ndarray
+        Validation data set of shape (n_data, height, width)
+
+    y_test : np.ndarray or None
+        Validation labels of shape (n_data,), and None in the case of frey.
+
+    """
+    if dataset_name == "mnist":
+        mnist = tf.keras.datasets.mnist
+        (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    elif dataset_name == "frey":
+        (x_train, y_train), (x_test, y_test) = freyface_load_data(split_train=0.9)
+    else:
+        raise Exception(f"Invalid dataset_name: {dataset_name}")
+
+    return (x_train, y_train), (x_test, y_test)
+
+
+def pre_process_dataset(x):
+    """ Pre-processes data set - flattening and normalizing.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Training or validation data set of shape (n_data, height, width)
+
+    Returns
+    -------
+    np.ndarray
+        Training or validation data set of shape (n_data, height*width)
+
+    """
+    # Flatten and normalize images.
+    n_data, height, width = x.shape
     input_dim = height * width
-    data = data["ff"].T.reshape((-1, input_dim))
-    data = data.astype('float32')/255
+    return x.reshape(-1, input_dim).astype("float32") / 255
 
-    split = np.random.rand(len(data)) < 0.9
-    train = data[split]
-    test = data[~split]
 
-    return train,test,height,width
+def visualize_imgs(x, n_imgs=4):
+    """ Pre-processes data set - flattening and normalizing.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Training or validation data set of shape (n_data, height, width)
+
+    n_imgs : int
+        The number of images to show.
+
+    Returns
+    -------
+    None
+
+    """
+    n_imgs_all = x.shape[0]
+    mask = np.random.choice(n_imgs, n_imgs_all)
+    x_show = x[mask]
+
+    fig, axes = plt.subplots(n_imgs)
+    for idx, ax in enumerate(axes):
+        ax.imshow(x_show[idx])
+        ax.axis('off')
+    plt.show()
 
 
 if __name__ == "__main__":
-    # Uncomment for freyface
-    
-    """x_train_flattened,x_test_flattened,ff_height,ff_width = freyface()
-    n_data, height, width = len(x_train_flattened),ff_height,ff_width
-    input_dim = ff_height * ff_width"""
-    
-    # Uncomment for mnist
-    # Import the data set.
-    mnist = tf.keras.datasets.mnist
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    # Load dataset of choice - either mnist or frey.
+    (x_train, y_train), (x_test, y_test) = load_dataset(dataset_name="mnist")
+    print(f"img shape: height = {x_train.shape[1]}, width = {x_train.shape[2]}")
+    print(f"x_train has {x_train.shape[0]} imgs, x_test has {x_test.shape[0]} imgs")
 
+    # Comment out if no visualization needed.
+    visualize_imgs(x=x_train, n_imgs=4)
+
+    # Retrieve some params.
     n_data, height, width = x_train.shape
-
     input_dim = height * width
-    # Reshape data to (60000,784) in mnist case
-    x_train_flattened = x_train.reshape(-1, input_dim).astype("float32") / 255
-    x_test_flattened = x_test.reshape(-1, input_dim).astype("float32") / 255
 
-    #x_train = x_train[np.random.randint(x_train.shape[0],size=1000)]
-
+    # Pre-process data - flatten and normalize.
+    x_train_flattened = pre_process_dataset(x=x_train)
+    x_test_flattened = pre_process_dataset(x=x_test)
+    print(f"x_train_flattened.shape={x_train_flattened.shape}")
+    print(f"x_test_flattened.shape={x_test_flattened.shape}")
 
     # Create the VAE.
     encoder_hidden_dim = 100
