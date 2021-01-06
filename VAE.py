@@ -85,6 +85,24 @@ class VAE(Model):
         z = mu + std * eps
         return z
 
+    def encode(self, inputs):
+        # encoder_hidden shape=(batch_size, encoder_hidden_dim)
+        encoder_hidden = self.encoder_hidden(inputs)
+        # mu shape=(batch_size, latent_dim)
+        mu = self.mu(encoder_hidden)
+        # sigma shape=(batch_size, latent_dim)
+        sigma = self.sigma(encoder_hidden)
+        # z shape=(batch_size, latent_dim)
+        z = self.z([mu, sigma])
+        return mu, sigma, z
+
+    def decode(self, z):
+        # decoder_hidden shape=(batch_size, decoder_hidden_dim)
+        decoder_hidden = self.decoder_hidden(z)
+        # decoder_hidden shape=(batch_size, input_dim)
+        reconstruction = self.reconstruction(decoder_hidden)
+        return reconstruction
+
     def call(self, inputs):
         """ Overrides the call function of keras.Model via subclassing. Gets called at each optimization step.
         Parameters
@@ -100,18 +118,8 @@ class VAE(Model):
 
         """
         # Attach model parts together (i.e.: create computation graph).
-        # encoder_hidden shape=(batch_size, encoder_hidden_dim)
-        encoder_hidden = self.encoder_hidden(inputs)
-        # mu shape=(batch_size, latent_dim)
-        mu = self.mu(encoder_hidden)
-        # sigma shape=(batch_size, latent_dim)
-        sigma = self.sigma(encoder_hidden)
-        # z shape=(batch_size, latent_dim)
-        z = self.z([mu, sigma])
-        # decoder_hidden shape=(batch_size, decoder_hidden_dim)
-        decoder_hidden = self.decoder_hidden(z)
-        # decoder_hidden shape=(batch_size, input_dim)
-        reconstruction = self.reconstruction(decoder_hidden)
+        mu, sigma, z = self.encode(inputs)
+        reconstruction = self.decode(z)
 
         # Create the loss tensors.
         # Computes negative! KL Divergence Loss (First part of equation 24, but negative here to have -KLD)
@@ -123,7 +131,7 @@ class VAE(Model):
             reconstruction + EPSILON) + (1 - inputs) * kb.log(1 - reconstruction + EPSILON), axis=1))
         # Create the overall VAE loss.
         # ELBO in the paper is ELBO = KLD + Log_likelihood, ELBO in the paper is maximized
-        # We minimize the negative ELBO: - ELBO = - KLD - Log_likelihood = - KLD - Log_likelihood = - KLD + BCE
+        # We minimize the negative ELBO: - ELBO = - KLD - Log_likelihood = - KLD + BCE
         vae_loss = binary_cross_entropy_loss + negative_kl_loss
 
         self.add_loss(vae_loss)
@@ -416,6 +424,59 @@ def visualize_imgs(x, n_imgs=4):
     plt.show()
 
 
+def plot_latent_space(vae, n=30, figsize=15):
+    """ Plots latent space. Note that it only works for a 2D latent space.
+    Source from https://keras.io/examples/generative/vae/.
+
+    Parameters
+    ----------
+    vae : Model
+        The trained VAE model.
+
+    n : int
+        The number of images to show in rows anc columns (square figure).
+
+    figsize : int
+        The size of the pt figure.
+
+    Returns
+    -------
+    None
+
+    """
+    # display a n*n 2D manifold of digits
+    digit_size = 28
+    scale = 1.0
+    figure = np.zeros((digit_size * n, digit_size * n))
+    # linearly spaced coordinates corresponding to the 2D plot
+    # of digit classes in the latent space
+    grid_x = np.linspace(-scale, scale, n)
+    grid_y = np.linspace(-scale, scale, n)[::-1]
+
+    for i, yi in enumerate(grid_y):
+        for j, xi in enumerate(grid_x):
+            z_sample = np.array([[xi, yi]])
+            x_decoded = vae.decode(z_sample)
+            digit = x_decoded.numpy().reshape(digit_size, digit_size)
+            figure[
+                i * digit_size : (i + 1) * digit_size,
+                j * digit_size : (j + 1) * digit_size,
+            ] = digit
+
+    plt.figure(figsize=(figsize, figsize))
+    start_range = digit_size // 2
+    end_range = n * digit_size + start_range
+    pixel_range = np.arange(start_range, end_range, digit_size)
+    sample_range_x = np.round(grid_x, 1)
+    sample_range_y = np.round(grid_y, 1)
+    plt.xticks(pixel_range, sample_range_x)
+    plt.yticks(pixel_range, sample_range_y)
+    plt.xlabel("z[0]")
+    plt.ylabel("z[1]")
+    plt.imshow(figure, cmap="Greys_r")
+    plt.show()
+
+
 if __name__ == "__main__":
     # Load dataset of choice - either mnist or frey.
     (x_train, y_train), (x_test, y_test) = load_dataset(dataset_name="mnist")
@@ -437,7 +498,7 @@ if __name__ == "__main__":
 
     # Create the VAE.
     encoder_hidden_dim = 100
-    latent_dim = 20
+    latent_dim = 2
     decoder_hidden_dim = 100
     vae = VAE(input_dim=input_dim, encoder_hidden_dim=encoder_hidden_dim, latent_dim=latent_dim,
               decoder_hidden_dim=decoder_hidden_dim, name="vae")
@@ -454,8 +515,10 @@ if __name__ == "__main__":
     epochs = 200
     batch_size = 32
     history = vae.fit(x_train_flattened, x_train_flattened,
-                      epochs=epochs, batch_size=batch_size, shuffle=True, validation_data=(x_test_flattened, x_test_flattened))
+                      epochs=epochs, batch_size=batch_size, shuffle=True,
+                      validation_data=(x_test_flattened, x_test_flattened))
 
+    # Plot losses.
     neg_elbo_values = True
     dataset_name = "mnist"
     x_axis_label = "samples"
@@ -482,6 +545,8 @@ if __name__ == "__main__":
     plot_imgs_compare(n_imgs=10, x=x_train, y=y_train,
                       x_reconstructed=x_train_reconstructed, save_img=True)
 
+    # Plot latent space. Only works for latent_dim=2, i.e.: 2D latent space.
+    plot_latent_space(vae)
 
     """
     This part does not work yet.
