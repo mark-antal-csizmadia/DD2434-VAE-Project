@@ -49,8 +49,8 @@ class VAE(Model):
             units=encoder_hidden_dim, activation="relu", kernel_initializer=self.initializer)
         self.mu = Dense(
             latent_dim, kernel_initializer=self.initializer, name="mu")
-        self.sigma = Dense(
-            latent_dim, kernel_initializer=self.initializer, name="sigma")
+        self.log_var = Dense(
+            latent_dim, kernel_initializer=self.initializer, name="log_var")
         self.z = Lambda(self.get_latent, output_shape=(latent_dim,), name="z")
         self.decoder_hidden = Dense(
             decoder_hidden_dim, activation='relu', kernel_initializer=self.initializer)
@@ -60,12 +60,12 @@ class VAE(Model):
                   kernel_initializer=self.initializer, name="reconstruction")
 
     def get_latent(self, gauss_params):
-        """ Function to re-parametrize mu,sigma by sampling from Gaussian
+        """ Function to re-parametrize mu,log_var by sampling from Gaussian
 
         Parameters
         -----------
         gauss_params : tf.Tensor
-           mu and sigma of q(z|x), both have shape (batch_size, latent_dim) where batch_size is the
+           mu and log_var of q(z|x), both have shape (batch_size, latent_dim) where batch_size is the
             mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
             number of latent dimensions
 
@@ -77,11 +77,11 @@ class VAE(Model):
             number of latent dimensions
         """
         # Parameters of q(z|x) (equation 9)
-        mu, sigma = gauss_params
+        mu, log_var = gauss_params
         # Sample epsilon and calculate latent vector Z (equation 10)
         eps = kb.random_normal(shape=(kb.shape(mu)[0], kb.shape(mu)[1]))
         # standard deviation = sqrt(sigma) ; using the exponential assures that the result is positive
-        std = kb.exp(0.5*sigma)
+        std = kb.exp(0.5*log_var)
         z = mu + std * eps
         return z
 
@@ -90,11 +90,11 @@ class VAE(Model):
         encoder_hidden = self.encoder_hidden(inputs)
         # mu shape=(batch_size, latent_dim)
         mu = self.mu(encoder_hidden)
-        # sigma shape=(batch_size, latent_dim)
-        sigma = self.sigma(encoder_hidden)
+        # log_var shape=(batch_size, latent_dim)
+        log_var = self.log_var(encoder_hidden)
         # z shape=(batch_size, latent_dim)
-        z = self.z([mu, sigma])
-        return mu, sigma, z
+        z = self.z([mu, log_var])
+        return mu, log_var, z
 
     def decode(self, z):
         # decoder_hidden shape=(batch_size, decoder_hidden_dim)
@@ -118,13 +118,13 @@ class VAE(Model):
 
         """
         # Attach model parts together (i.e.: create computation graph).
-        mu, sigma, z = self.encode(inputs)
+        mu, log_var, z = self.encode(inputs)
         reconstruction = self.decode(z)
 
         # Create the loss tensors.
         # Computes negative! KL Divergence Loss (First part of equation 24, but negative here to have -KLD)
         negative_kl_loss = kb.mean(
-            0.5 * kb.sum(-sigma + kb.exp(sigma) + kb.square(mu) - 1, axis=1))
+            0.5 * kb.sum(-log_var + kb.exp(log_var) + kb.square(mu) - 1, axis=1))
         # Computes the Binary Cross-Entropy Loss that is equivalent to the negative binary loglikelihood
         # (comes from the sigmoid activation function of the Bernoulli MLP layer in the decoder)
         binary_cross_entropy_loss = kb.mean(-kb.sum(inputs * kb.log(
