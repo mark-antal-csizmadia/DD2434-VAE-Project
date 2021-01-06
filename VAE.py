@@ -474,6 +474,7 @@ def plot_latent_space(vae, n=30, figsize=15):
     plt.xlabel("z[0]")
     plt.ylabel("z[1]")
     plt.imshow(figure, cmap="Greys_r")
+    plt.savefig("images/latent_space.png")
     plt.show()
 
 
@@ -523,7 +524,7 @@ if __name__ == "__main__":
     dataset_name = "mnist"
     x_axis_label = "samples"
     x_axis_scale = "log"
-    ylim = (-150, -100)
+    ylim = (-200, -100)
 
     plot_lowerbound(
         history=history,
