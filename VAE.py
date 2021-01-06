@@ -18,7 +18,7 @@ class VAE(Model):
     """ Variational Auto-Encoder class via subclassing keras.Model.
     """
 
-    def __init__(self, input_dim, encoder_hidden_dim, latent_dim, decoder_hidden_dim, name):
+    def __init__(self, input_dim, encoder_hidden_dim, latent_dim, decoder_hidden_dim, decoder_type, name):
         """ Init function of the VAE class.
 
         Parameters
@@ -36,28 +36,50 @@ class VAE(Model):
         decoder_hidden_dim : int
              The number of nodes in the hidden layer of the decoder.
 
+        decoder_type : str
+            Either bern for Bernoulli decoder -> negative log likelihood is binary cross entropy
+            or gauss for Gaussian decoder -> negative log-likelihood is - sum ( log N(mu, exp(log_var)) )
+
         name : str
             The name of the model.
         """
         # Inherit everything from keras.Model.
         super(VAE, self).__init__(name=name)
+        # Decoder type.
+        if decoder_type in ["bern", "gauss"]:
+            self.decoder_type = decoder_type
+        else:
+            raise Exception(f"Invalid decoder_type: {decoder_type}")
+
         # Xavier initialization (https://www.deeplearning.ai/ai-notes/initialization/, see towards the end of the
         # article)
-        self.initializer = tf.initializers.VarianceScaling(scale=2.0)
+        #self.initializer = tf.initializers.VarianceScaling(scale=2.0)
+        self.initializer = tf.initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None)
         # Create the VAE layers.
         self.encoder_hidden = Dense(
-            units=encoder_hidden_dim, activation="relu", kernel_initializer=self.initializer)
+            units=encoder_hidden_dim, activation="tanh", kernel_initializer=self.initializer)
         self.mu = Dense(
             latent_dim, kernel_initializer=self.initializer, name="mu")
         self.log_var = Dense(
             latent_dim, kernel_initializer=self.initializer, name="log_var")
         self.z = Lambda(self.get_latent, output_shape=(latent_dim,), name="z")
         self.decoder_hidden = Dense(
-            decoder_hidden_dim, activation='relu', kernel_initializer=self.initializer)
+            decoder_hidden_dim, activation='tanh', kernel_initializer=self.initializer)
         # The decoder is a Bernoulli MLP. Has binary cross-entropy loss, see later.
-        self.reconstruction = \
-            Dense(input_dim, activation='sigmoid',
-                  kernel_initializer=self.initializer, name="reconstruction")
+        if self.decoder_type == "bern":
+            self.reconstruction = \
+                Dense(input_dim, activation='sigmoid',
+                      kernel_initializer=self.initializer, name="reconstruction")
+        else:
+            self.reconstruction_mu = \
+                Dense(input_dim, activation='sigmoid',
+                      kernel_initializer=self.initializer, name="reconstruction_mu")
+            log_var_clip_val = 5
+            self.reconstruction_log_var = \
+                Dense(input_dim, activation=lambda v: kb.clip(v, -log_var_clip_val, log_var_clip_val),
+                      kernel_initializer=self.initializer, name="reconstruction_log_var")
+            #self.reconstruction_log_var = \
+            #    Dense(input_dim, kernel_initializer=self.initializer, name="reconstruction_log_var")
 
     def get_latent(self, gauss_params):
         """ Function to re-parametrize mu,log_var by sampling from Gaussian
@@ -78,11 +100,13 @@ class VAE(Model):
         """
         # Parameters of q(z|x) (equation 9)
         mu, log_var = gauss_params
+
         # Sample epsilon and calculate latent vector Z (equation 10)
         eps = kb.random_normal(shape=(kb.shape(mu)[0], kb.shape(mu)[1]))
         # standard deviation = sqrt(sigma) ; using the exponential assures that the result is positive
         std = kb.exp(0.5*log_var)
         z = mu + std * eps
+
         return z
 
     def encode(self, inputs):
@@ -100,8 +124,14 @@ class VAE(Model):
         # decoder_hidden shape=(batch_size, decoder_hidden_dim)
         decoder_hidden = self.decoder_hidden(z)
         # decoder_hidden shape=(batch_size, input_dim)
-        reconstruction = self.reconstruction(decoder_hidden)
-        return reconstruction
+        if self.decoder_type == "bern":
+            reconstruction = self.reconstruction(decoder_hidden)
+            return reconstruction
+        else:
+            reconstruction_mu = self.reconstruction_mu(decoder_hidden)
+            reconstruction_log_var = self.reconstruction_log_var(decoder_hidden)
+            return reconstruction_mu, reconstruction_log_var
+
 
     def call(self, inputs):
         """ Overrides the call function of keras.Model via subclassing. Gets called at each optimization step.
@@ -119,25 +149,42 @@ class VAE(Model):
         """
         # Attach model parts together (i.e.: create computation graph).
         mu, log_var, z = self.encode(inputs)
-        reconstruction = self.decode(z)
+        if self.decoder_type == "bern":
+            reconstruction = self.decode(z)
+        else:
+            reconstruction_mu, reconstruction_log_var = self.decode(z)
 
         # Create the loss tensors.
         # Computes negative! KL Divergence Loss (First part of equation 24, but negative here to have -KLD)
         negative_kl_loss = kb.mean(
             0.5 * kb.sum(-log_var + kb.exp(log_var) + kb.square(mu) - 1, axis=1))
-        # Computes the Binary Cross-Entropy Loss that is equivalent to the negative binary loglikelihood
-        # (comes from the sigmoid activation function of the Bernoulli MLP layer in the decoder)
-        binary_cross_entropy_loss = kb.mean(-kb.sum(inputs * kb.log(
-            reconstruction + EPSILON) + (1 - inputs) * kb.log(1 - reconstruction + EPSILON), axis=1))
+        if self.decoder_type == "bern":
+            # Computes the Binary Cross-Entropy Loss that is equivalent to the negative binary loglikelihood
+            # (comes from the sigmoid activation function of the Bernoulli MLP layer in the decoder)
+            binary_cross_entropy_loss = \
+                    kb.mean(-kb.sum(inputs * kb.log(reconstruction + EPSILON) +
+                                    (1 - inputs) * kb.log(1 - reconstruction + EPSILON), axis=1))
+            negative_log_likelihood = binary_cross_entropy_loss
+        else:
+            # Compute negative log-likelihood of normal distribution.
+            #negative_mse = kb.mean(-kb.sum(kb.square(inputs - reconstruction_mu), axis=1))
+            x_prec = kb.exp(-reconstruction_log_var)
+            x_diff = inputs - reconstruction_mu
+            x_power = -0.5 * kb.square(x_diff) * x_prec
+            negative_log_likelihood = kb.mean(-kb.sum(-0.5 * (reconstruction_log_var + np.log(2 * np.pi)) + x_power, axis=1))
+            #negative_log_likelihood = negative_mse
+
         # Create the overall VAE loss.
         # ELBO in the paper is ELBO = KLD + Log_likelihood, ELBO in the paper is maximized
         # We minimize the negative ELBO: - ELBO = - KLD - Log_likelihood = - KLD + BCE
-        vae_loss = binary_cross_entropy_loss + negative_kl_loss
+        vae_loss = negative_log_likelihood + negative_kl_loss
 
         self.add_loss(vae_loss)
-
-        # Return the reconstructed observations.
-        return reconstruction
+        if self.decoder_type == "bern":
+            # Return the reconstructed observations.
+            return reconstruction
+        else:
+            return reconstruction_mu
 
 
 def plot_imgs_compare(n_imgs, x, y, x_reconstructed, save_img):
@@ -171,7 +218,8 @@ def plot_imgs_compare(n_imgs, x, y, x_reconstructed, save_img):
     n_imgs_all = x.shape[0]
     idx_imgs = np.random.choice(n_imgs_all, n_imgs)
     x_show = x[idx_imgs]
-    y_show = y[idx_imgs]
+    if y is not None:
+        y_show = y[idx_imgs]
     x_reconstructed_show = x_reconstructed[idx_imgs]
 
     # Create figure.
@@ -187,7 +235,8 @@ def plot_imgs_compare(n_imgs, x, y, x_reconstructed, save_img):
         ax_left.imshow(x_reconstructed_show[n_idx])
         ax_right.imshow(x_show[n_idx])
         ax_left.set_title(f"Reconstructed")
-        ax_right.set_title(f"Label: {y_show[n_idx]}")
+        if y is not None:
+            ax_right.set_title(f"Label: {y_show[n_idx]}")
         ax_left.axis('off')
         ax_right.axis('off')
 
@@ -424,7 +473,7 @@ def visualize_imgs(x, n_imgs=4):
     plt.show()
 
 
-def plot_latent_space(vae, n=30, figsize=15):
+def plot_latent_space(vae, img_height, img_width, decoder_type, n=30, figsize=15):
     """ Plots latent space. Note that it only works for a 2D latent space.
     Source from https://keras.io/examples/generative/vae/.
 
@@ -445,9 +494,9 @@ def plot_latent_space(vae, n=30, figsize=15):
 
     """
     # display a n*n 2D manifold of digits
-    digit_size = 28
+    #digit_size = 28
     scale = 1.0
-    figure = np.zeros((digit_size * n, digit_size * n))
+    figure = np.zeros((img_height * n, img_width * n))
     # linearly spaced coordinates corresponding to the 2D plot
     # of digit classes in the latent space
     grid_x = np.linspace(-scale, scale, n)
@@ -456,21 +505,30 @@ def plot_latent_space(vae, n=30, figsize=15):
     for i, yi in enumerate(grid_y):
         for j, xi in enumerate(grid_x):
             z_sample = np.array([[xi, yi]])
-            x_decoded = vae.decode(z_sample)
-            digit = x_decoded.numpy().reshape(digit_size, digit_size)
+            if decoder_type == "bern":
+                x_decoded = vae.decode(z_sample)
+            else:
+                x_decoded, _ = vae.decode(z_sample)
+            digit = x_decoded.numpy().reshape(img_height, img_width)
             figure[
-                i * digit_size : (i + 1) * digit_size,
-                j * digit_size : (j + 1) * digit_size,
+                i * img_height : (i + 1) * img_height,
+                j * img_width : (j + 1) * img_width,
             ] = digit
 
     plt.figure(figsize=(figsize, figsize))
-    start_range = digit_size // 2
-    end_range = n * digit_size + start_range
-    pixel_range = np.arange(start_range, end_range, digit_size)
-    sample_range_x = np.round(grid_x, 1)
-    sample_range_y = np.round(grid_y, 1)
-    plt.xticks(pixel_range, sample_range_x)
-    plt.yticks(pixel_range, sample_range_y)
+
+    start_range_height = img_height // 2
+    end_range_height = n * img_height + start_range_height
+    pixel_range_height = np.arange(start_range_height, end_range_height, img_height)
+    sample_range_y_height = np.round(grid_y, 1)
+
+    start_range_width = img_width // 2
+    end_range_width = n * img_width + start_range_width
+    pixel_range_width = np.arange(start_range_width, end_range_width, img_width)
+    sample_range_x_width = np.round(grid_x, 1)
+
+    plt.xticks(pixel_range_width, sample_range_x_width)
+    plt.yticks(pixel_range_height, sample_range_y_height)
     plt.xlabel("z[0]")
     plt.ylabel("z[1]")
     plt.imshow(figure, cmap="Greys_r")
@@ -480,7 +538,8 @@ def plot_latent_space(vae, n=30, figsize=15):
 
 if __name__ == "__main__":
     # Load dataset of choice - either mnist or frey.
-    (x_train, y_train), (x_test, y_test) = load_dataset(dataset_name="mnist")
+    dataset_name = "frey"
+    (x_train, y_train), (x_test, y_test) = load_dataset(dataset_name=dataset_name)
     print(f"img shape: height = {x_train.shape[1]}, width = {x_train.shape[2]}")
     print(f"x_train has {x_train.shape[0]} imgs, x_test has {x_test.shape[0]} imgs")
 
@@ -498,23 +557,26 @@ if __name__ == "__main__":
     print(f"x_test_flattened.shape={x_test_flattened.shape}")
 
     # Create the VAE.
-    encoder_hidden_dim = 100
+    encoder_hidden_dim = 200
     latent_dim = 2
-    decoder_hidden_dim = 100
+    decoder_hidden_dim = 200
+    decoder_type = "gauss"
     vae = VAE(input_dim=input_dim, encoder_hidden_dim=encoder_hidden_dim, latent_dim=latent_dim,
-              decoder_hidden_dim=decoder_hidden_dim, name="vae")
+              decoder_hidden_dim=decoder_hidden_dim, decoder_type=decoder_type, name="vae")
     # Plot model if wanted. Something is not okay with this now, leave it commented.
     # plot_model(vae, to_file='vae_viz.png', show_shapes=True)
 
     # Create optimizer.
-    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
+    #optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
+    #optimizer = tf.keras.optimizers.Adagrad(learning_rate=1e-2) #-714 for 10k epochs
+    optimizer = tf.keras.optimizers.Adagrad(learning_rate=2e-2)
 
     # Compile model.
     vae.compile(optimizer)
 
     # Fit model.
-    epochs = 200
-    batch_size = 32
+    epochs = 10000
+    batch_size = 100
     history = vae.fit(x_train_flattened, x_train_flattened,
                       epochs=epochs, batch_size=batch_size, shuffle=True,
                       validation_data=(x_test_flattened, x_test_flattened))
@@ -524,7 +586,7 @@ if __name__ == "__main__":
     dataset_name = "mnist"
     x_axis_label = "samples"
     x_axis_scale = "log"
-    ylim = (-200, -100)
+    ylim = (0, 1600)
 
     plot_lowerbound(
         history=history,
@@ -546,8 +608,9 @@ if __name__ == "__main__":
     plot_imgs_compare(n_imgs=10, x=x_train, y=y_train,
                       x_reconstructed=x_train_reconstructed, save_img=True)
 
-    # Plot latent space. Only works for latent_dim=2, i.e.: 2D latent space.
-    plot_latent_space(vae)
+    if latent_dim == 2:
+        # Plot latent space. Only works for latent_dim=2, i.e.: 2D latent space.
+        plot_latent_space(vae, img_height=height, img_width=width, decoder_type=decoder_type)
 
     """
     This part does not work yet.
