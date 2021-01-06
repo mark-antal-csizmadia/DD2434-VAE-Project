@@ -553,7 +553,7 @@ if __name__ == "__main__":
     vae.compile(optimizer)
 
     # Fit model.
-    epochs = 10
+    epochs = 200
     batch_size = 32
     history = vae.fit(x_train_flattened, x_train_flattened,
                       epochs=epochs, batch_size=batch_size, shuffle=True,
