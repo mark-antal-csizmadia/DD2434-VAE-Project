@@ -14,6 +14,296 @@ EPSILON = 1e-6
 tf.random.set_seed(221)
 
 
+class VAE_EGDB(Model):
+    """ Variational Auto-Encoder class via subclassing keras.Model.
+    Encoder is Gaussian -> q_{phi}(z|x) = N(z; mu, exp(log_var))
+    Decoder is Bernoulli -> p_{theta}(x|z) = Bern(p) where p technically a probability value corresponding to each
+    value in the input_dim elements of the output Tensor. See Appendix C
+    """
+
+    def __init__(self, input_dim, encoder_hidden_dim, latent_dim, decoder_hidden_dim, name):
+        """ Init function of the VAE class.
+
+        Parameters
+        ----------
+        input_dim : int
+            The number of input dimensions, that is, the number of nodes in the first layer of the encoder and the
+            last, output layer of the decoder.
+
+        encoder_hidden_dim : int
+            The number of nodes in the hidden layer of the encoder.
+
+        latent_dim : int
+            The number of latent dimensions into which the VAE encodes the input data.
+
+        decoder_hidden_dim : int
+             The number of nodes in the hidden layer of the decoder.
+
+        name : str
+            The name of the model.
+        """
+        # Inherit everything from keras.Model.
+        super(VAE_EGDB, self).__init__(name=name)
+
+        # Paper: All parameters, both variational and generative, were initialized by random sampling from N (0, 0.01)
+        self.initializer = tf.initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None)
+        # Tanh activation functions in MLP and paper says MLP (not ReLU in MLP)
+        self.activation = "tanh"
+
+        # Create the VAE layers.
+        self.encoder_hidden = Dense(
+            units=encoder_hidden_dim, activation=self.activation, kernel_initializer=self.initializer)
+
+        self.mu = Dense(units=latent_dim, kernel_initializer=self.initializer, name="mu")
+
+        self.log_var = Dense(units=latent_dim, kernel_initializer=self.initializer, name="log_var")
+
+        self.z = Lambda(self.get_latent, output_shape=(latent_dim,), name="z")
+
+        self.decoder_hidden = Dense(
+            units=decoder_hidden_dim, activation=self.activation, kernel_initializer=self.initializer)
+
+        # The decoder is a Bernoulli MLP. Has binary cross-entropy loss, see later.
+        self.reconstruction = \
+            Dense(units=input_dim, activation='sigmoid', kernel_initializer=self.initializer, name="reconstruction")
+
+    def get_latent(self, gauss_params):
+        """ Function to re-parametrize mu,log_var by sampling from Gaussian
+
+        Parameters
+        -----------
+        gauss_params : tf.Tensor
+           mu and log_var of q(z|x), both have shape (batch_size, latent_dim) where batch_size is the
+            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
+            number of latent dimensions
+
+        Returns
+        -----------
+        z : tf.Tensor
+            latent vector sampled after encoding the data. Has shape (batch_size, latent_dim) where batch_size is the
+            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
+            number of latent dimensions
+        """
+        # Parameters of q(z|x) (equation 9)
+        mu, log_var = gauss_params
+
+        # Sample epsilon and calculate latent vector Z (equation 10)
+        eps = kb.random_normal(shape=(kb.shape(mu)[0], kb.shape(mu)[1]))
+        # standard deviation = sqrt(sigma) ; using the exponential assures that the result is positive
+        std = kb.exp(0.5*log_var)
+        z = mu + std * eps
+        return z
+
+    def encode(self, inputs):
+        # encoder_hidden shape=(batch_size, encoder_hidden_dim)
+        encoder_hidden = self.encoder_hidden(inputs)
+        # mu shape=(batch_size, latent_dim)
+        mu = self.mu(encoder_hidden)
+        # log_var shape=(batch_size, latent_dim)
+        log_var = self.log_var(encoder_hidden)
+        # z shape=(batch_size, latent_dim)
+        z = self.z([mu, log_var])
+        return mu, log_var, z
+
+    def decode(self, z):
+        # decoder_hidden shape=(batch_size, decoder_hidden_dim)
+        decoder_hidden = self.decoder_hidden(z)
+        # reconstruction shape=(batch_size, input_dim)
+        reconstruction = self.reconstruction(decoder_hidden)
+        return reconstruction
+
+    def call(self, inputs):
+        """ Overrides the call function of keras.Model via subclassing. Gets called at each optimization step.
+        Parameters
+        ----------
+        inputs : tf.Tensor
+            Input data. Has shape (batch_size, input_dim) where batch_size is the mini-batch size of the optimizer and
+            input_dim is the number of input nodes in the first layer of the encoder network
+        Returns
+        -------
+        reconstruction : tf.Tensor
+            Reconstruction of the input data. Has shape (batch_size, input_dim) where batch_size is the mini-batch
+            size of the optimizer and input_dim is the number of input nodes in the first layer of the encoder network
+
+        """
+        # Attach model parts together (i.e.: create computation graph).
+        mu, log_var, z = self.encode(inputs)
+        reconstruction = self.decode(z)
+
+        # Create the loss tensors.
+        # Computes negative! KL Divergence Loss (First part of equation 24, but negative here to have -KLD)
+        negative_kl_loss = kb.mean(
+            0.5 * kb.sum(-log_var + kb.exp(log_var) + kb.square(mu) - 1, axis=1))
+
+        # Computes the Binary Cross-Entropy Loss that is equivalent to the negative binary loglikelihood
+        # (comes from the sigmoid activation function of the Bernoulli MLP layer in the decoder)
+        negative_log_likelihood = \
+            kb.mean(-kb.sum(inputs * kb.log(reconstruction + EPSILON) +
+            (1 - inputs) * kb.log(1 - reconstruction + EPSILON), axis=1))
+
+        # Create the overall VAE loss.
+        # ELBO in the paper is ELBO = KLD + Log_likelihood, ELBO in the paper is maximized
+        # We minimize the negative ELBO: - ELBO = - KLD - Log_likelihood = - KLD + BCE (in the Bernoulli case)
+        vae_loss = negative_log_likelihood + negative_kl_loss
+
+        self.add_loss(vae_loss)
+
+        # In the case of the Bernoulli output layer, reconstruction is the expectation of the Bernoulli distribution
+        # which is p, the probability parameter of the distribution.
+        # This is what we return as the reconstruction values in the output vector.
+        # Return the reconstructed observations.
+        return reconstruction
+
+
+class VAE_EGDG(Model):
+    """ Variational Auto-Encoder class via subclassing keras.Model.
+    Encoder is Gaussian -> q_{phi}(z|x) = N(z; mu, exp(log_var))
+    Decoder is Gaussian -> p_{theta}(x|z) = N(x; reconstruction_mu, exp(reconstruction_log_var)
+    where reconstruction_mu is the mean of the distribution in the Gaussian output layer (coming from one layer)
+    and exp(reconstruction_log_var) is the variance of the distribution in the Gaussian output layer
+    (coming from another layer). See Appendix C.
+    """
+    def __init__(self, input_dim, encoder_hidden_dim, latent_dim, decoder_hidden_dim, name):
+        """ Init function of the VAE class.
+
+        Parameters
+        ----------
+        input_dim : int
+            The number of input dimensions, that is, the number of nodes in the first layer of the encoder and the
+            last, output layer of the decoder.
+
+        encoder_hidden_dim : int
+            The number of nodes in the hidden layer of the encoder.
+
+        latent_dim : int
+            The number of latent dimensions into which the VAE encodes the input data.
+
+        decoder_hidden_dim : int
+             The number of nodes in the hidden layer of the decoder.
+
+        name : str
+            The name of the model.
+        """
+        # Inherit everything from keras.Model.
+        super(VAE_EGDG, self).__init__(name=name)
+        # Paper: All parameters, both variational and generative, were initialized by random sampling from N (0, 0.01)
+        self.initializer = tf.initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None)
+        # Tanh activation functions in MLP and paper says MLP (not ReLU in MLP)
+        self.activation = "tanh"
+
+        # Create the VAE layers.
+        self.encoder_hidden = Dense(
+            units=encoder_hidden_dim, activation=self.activation, kernel_initializer=self.initializer)
+
+        self.mu = Dense(units=latent_dim, kernel_initializer=self.initializer, name="mu")
+
+        self.log_var = Dense(units=latent_dim, kernel_initializer=self.initializer, name="log_var")
+
+        self.z = Lambda(self.get_latent, output_shape=(latent_dim,), name="z")
+
+        self.decoder_hidden = Dense(
+            units=decoder_hidden_dim, activation=self.activation, kernel_initializer=self.initializer)
+
+        # The decoder is a Gaussian MLP, has Gaussian log-likelihood loss, see later.
+        self.reconstruction_mu = \
+            Dense(units=input_dim, activation='sigmoid', kernel_initializer=self.initializer, name="reconstruction_mu")
+
+        log_var_clip_val = 5
+        self.reconstruction_log_var = \
+            Dense(units=input_dim, activation=lambda v: kb.clip(v, -log_var_clip_val, log_var_clip_val),
+                  kernel_initializer=self.initializer, name="reconstruction_log_var")
+
+    def get_latent(self, gauss_params):
+        """ Function to re-parametrize mu,log_var by sampling from Gaussian
+
+        Parameters
+        -----------
+        gauss_params : tf.Tensor
+           mu and log_var of q(z|x), both have shape (batch_size, latent_dim) where batch_size is the
+            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
+            number of latent dimensions
+
+        Returns
+        -----------
+        z : tf.Tensor
+            latent vector sampled after encoding the data. Has shape (batch_size, latent_dim) where batch_size is the
+            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
+            number of latent dimensions
+        """
+        # Parameters of q(z|x) (equation 9)
+        mu, log_var = gauss_params
+
+        # Sample epsilon and calculate latent vector Z (equation 10)
+        eps = kb.random_normal(shape=(kb.shape(mu)[0], kb.shape(mu)[1]))
+        # standard deviation = sqrt(sigma) ; using the exponential assures that the result is positive
+        std = kb.exp(0.5*log_var)
+        z = mu + std * eps
+        return z
+
+    def encode(self, inputs):
+        # encoder_hidden shape=(batch_size, encoder_hidden_dim)
+        encoder_hidden = self.encoder_hidden(inputs)
+        # mu shape=(batch_size, latent_dim)
+        mu = self.mu(encoder_hidden)
+        # log_var shape=(batch_size, latent_dim)
+        log_var = self.log_var(encoder_hidden)
+        # z shape=(batch_size, latent_dim)
+        z = self.z([mu, log_var])
+        return mu, log_var, z
+
+    def decode(self, z):
+        # decoder_hidden shape=(batch_size, decoder_hidden_dim)
+        decoder_hidden = self.decoder_hidden(z)
+        # reconstruction_mu shape=(batch_size, input_dim)
+        reconstruction_mu = self.reconstruction_mu(decoder_hidden)
+        # reconstruction_log_var shape=(batch_size, input_dim)
+        reconstruction_log_var = self.reconstruction_log_var(decoder_hidden)
+        return reconstruction_mu, reconstruction_log_var
+
+    def call(self, inputs):
+        """ Overrides the call function of keras.Model via subclassing. Gets called at each optimization step.
+        Parameters
+        ----------
+        inputs : tf.Tensor
+            Input data. Has shape (batch_size, input_dim) where batch_size is the mini-batch size of the optimizer and
+            input_dim is the number of input nodes in the first layer of the encoder network
+        Returns
+        -------
+        reconstruction : tf.Tensor
+            Reconstruction of the input data. Has shape (batch_size, input_dim) where batch_size is the mini-batch
+            size of the optimizer and input_dim is the number of input nodes in the first layer of the encoder network
+
+        """
+        # Attach model parts together (i.e.: create computation graph).
+        mu, log_var, z = self.encode(inputs)
+        reconstruction_mu, reconstruction_log_var = self.decode(z)
+
+        # Create the loss tensors.
+        # Computes negative! KL Divergence Loss (First part of equation 24, but negative here to have -KLD)
+        negative_kl_loss = kb.mean(
+            0.5 * kb.sum(-log_var + kb.exp(log_var) + kb.square(mu) - 1, axis=1))
+
+        # Compute negative log-likelihood of normal distribution. MSE does not seem to work!
+        #negative_mse = kb.mean(-kb.sum(kb.square(inputs - reconstruction_mu), axis=1))
+        x_prec = kb.exp(-reconstruction_log_var)
+        x_diff = inputs - reconstruction_mu
+        x_power = -0.5 * kb.square(x_diff) * x_prec
+        negative_log_likelihood = \
+            kb.mean(-kb.sum(-0.5 * (reconstruction_log_var + np.log(2 * np.pi)) + x_power, axis=1))
+        #negative_log_likelihood = negative_mse
+
+        # Create the overall VAE loss.
+        # ELBO in the paper is ELBO = KLD + Log_likelihood, ELBO in the paper is maximized
+        # We minimize the negative ELBO: - ELBO = - KLD - Log_likelihood (Log_likelihood is the log-likelihood of Gauss)
+        vae_loss = negative_log_likelihood + negative_kl_loss
+
+        self.add_loss(vae_loss)
+
+        # In the case of the Gaussian output layer, reconstruction_mu is the expectation of the Gaussian distribution.
+        # This is what we return as the reconstruction values in the output vector.
+        return reconstruction_mu
+
+
 class VAE(Model):
     """ Variational Auto-Encoder class via subclassing keras.Model.
     """
@@ -473,7 +763,7 @@ def visualize_imgs(x, n_imgs=4):
     plt.show()
 
 
-def plot_latent_space(vae, img_height, img_width, decoder_type, n=30, figsize=15):
+def plot_latent_space(vae, img_height, img_width, name, n=30, figsize=15):
     """ Plots latent space. Note that it only works for a 2D latent space.
     Source from https://keras.io/examples/generative/vae/.
 
@@ -505,7 +795,7 @@ def plot_latent_space(vae, img_height, img_width, decoder_type, n=30, figsize=15
     for i, yi in enumerate(grid_y):
         for j, xi in enumerate(grid_x):
             z_sample = np.array([[xi, yi]])
-            if decoder_type == "bern":
+            if name == "VAE_EGDB":
                 x_decoded = vae.decode(z_sample)
             else:
                 x_decoded, _ = vae.decode(z_sample)
@@ -558,24 +848,31 @@ if __name__ == "__main__":
 
     # Create the VAE.
     encoder_hidden_dim = 200
-    latent_dim = 2
+    latent_dim = 20
     decoder_hidden_dim = 200
-    decoder_type = "gauss"
-    vae = VAE(input_dim=input_dim, encoder_hidden_dim=encoder_hidden_dim, latent_dim=latent_dim,
-              decoder_hidden_dim=decoder_hidden_dim, decoder_type=decoder_type, name="vae")
+    #vae = VAE(input_dim=input_dim, encoder_hidden_dim=encoder_hidden_dim, latent_dim=latent_dim,
+    #          decoder_hidden_dim=decoder_hidden_dim, decoder_type="gauss", name="vae")
+
+    # Use VAE_EGDG for frey
+    # name used in plot_latent_space
+    name = "VAE_EGDG" # name = "VAE_EGDB" for mnist
+    vae = VAE_EGDG(input_dim=input_dim, encoder_hidden_dim=encoder_hidden_dim, latent_dim=latent_dim,
+                   decoder_hidden_dim=decoder_hidden_dim, name=name)
     # Plot model if wanted. Something is not okay with this now, leave it commented.
     # plot_model(vae, to_file='vae_viz.png', show_shapes=True)
 
     # Create optimizer.
-    #optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
-    #optimizer = tf.keras.optimizers.Adagrad(learning_rate=1e-2) #-714 for 10k epochs
-    optimizer = tf.keras.optimizers.Adagrad(learning_rate=2e-2)
+    # Paper: Stepsizes were adapted with Adagrad [DHS10]; the Adagrad global stepsize parameters were chosen
+    # from {0.01,0.02, 0.1} based on performance on the training set in the first few iterations.
+    lrs = [1e-2, 2e-2, 10e-2]
+    optimizer = tf.keras.optimizers.Adagrad(learning_rate=lrs[1])
 
     # Compile model.
     vae.compile(optimizer)
 
     # Fit model.
     epochs = 10000
+    # Paper: Minibatches of size M = 100 were used
     batch_size = 100
     history = vae.fit(x_train_flattened, x_train_flattened,
                       epochs=epochs, batch_size=batch_size, shuffle=True,
@@ -583,7 +880,6 @@ if __name__ == "__main__":
 
     # Plot losses.
     neg_elbo_values = True
-    dataset_name = "mnist"
     x_axis_label = "samples"
     x_axis_scale = "log"
     ylim = (0, 1600)
@@ -610,7 +906,7 @@ if __name__ == "__main__":
 
     if latent_dim == 2:
         # Plot latent space. Only works for latent_dim=2, i.e.: 2D latent space.
-        plot_latent_space(vae, img_height=height, img_width=width, decoder_type=decoder_type)
+        plot_latent_space(vae, img_height=height, img_width=width, name=name)
 
     """
     This part does not work yet.
