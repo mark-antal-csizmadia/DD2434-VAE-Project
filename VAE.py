@@ -985,8 +985,6 @@ if __name__ == "__main__":
         # Plot clusters, this implementation also only works for latent_dim=2.
         plot_clusters(vae, x_train_flattened, y_train)
 
-    # Plot clusters, this implementation also only works for latent_dim=2.
-    plot_clusters(vae, x_train_flattened, y_train)
 
 
 
