@@ -20,15 +20,14 @@ pip install -r requirements.txt
 
 ## Usage
 
-The usage changed, there is only one script now - VAE.py. The code from the main branch has been reorganized into this one script. The code is the same, but a little more cleaned up and with more comments.
+Use the main script to train a Variational Auto-Encoder (VAE). Set the encoder and decoder network parameters, the training parameters (e.g.: learning rate) the type of decoder (Bernoulli or Gaussian) and the data set (MNIST or Frey face) in the code.
 
 ```bash
 cd DD2434-VAE-Project
-python VAE.py
+python main.py
 ```
 
-Try to train for 50 epoch with a batch size of 32 with the same optimizer as it is now. I start out with around 1.2928 loss, on the 2 epoch it's around 0.2682, and by the 50th epoch it's around 0.1417.
 
-## Some other section
+## Description
 
-bla bla
+The code is a replication of the research paper titled Auto-Encoding Variational Bayes (https://arxiv.org/abs/1312.6114). See the reproduced results in the report (some are also located at  images/).

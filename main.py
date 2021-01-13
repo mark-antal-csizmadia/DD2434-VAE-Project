@@ -95,6 +95,31 @@ class VAE_EGDB(Model):
         return z
 
     def encode(self, inputs):
+        """ Encoder forward-propagation. Encodes input data into a latent distribution.
+
+        Parameters
+        -----------
+        inputs : tf.Tensor
+            Input data. Has shape (batch_size, input_dim) where batch_size is the mini-batch size of the optimizer and
+            input_dim is the number of input nodes in the first layer of the encoder network
+
+        Returns
+        -----------
+        mu : tf.Tensor
+            Expectation of encoded distribution (Gaussian so expectation is the mean) as vector.
+            Has shape (batch_size, latent_dim) where batch_size is the mini-batch size of the optimizer and
+            latent_dim is an argument to the class constructor denoting the number of latent dimensions
+
+        log_var : tf.Tensor
+            The log of the variance of encoded distribution as vector.
+            Has shape (batch_size, latent_dim) where batch_size is the mini-batch size of the optimizer and
+            latent_dim is an argument to the class constructor denoting the number of latent dimensions
+
+        z : tf.Tensor
+            latent vector sampled after encoding the data. Has shape (batch_size, latent_dim) where batch_size is the
+            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
+            number of latent dimensions
+        """
         # encoder_hidden shape=(batch_size, encoder_hidden_dim)
         encoder_hidden = self.encoder_hidden(inputs)
         # mu shape=(batch_size, latent_dim)
@@ -106,6 +131,26 @@ class VAE_EGDB(Model):
         return mu, log_var, z
 
     def decode(self, z):
+        """ Decoder forward-propagation. Decodes the latent distribution into the reconstruction of the input data.
+        This is the generative aspect of the VAE. Therefore, this function can be used to generate data from the
+        learned latent distribution.
+        The decoder of VAE_EGDB is Bernoulli -> p_{theta}(x|z) = Bern(p) where p is technically a probability value
+        corresponding to each value in the input_dim elements of the output Tensor. See Appendix C
+
+        Parameters
+        -----------
+        z : tf.Tensor
+            latent vector sampled after encoding the data. Has shape (batch_size, latent_dim) where batch_size is the
+            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
+            number of latent dimensions
+
+        Returns
+        -----------
+        reconstruction : tf.Tensor
+            The reconstruction of the input data. The decoder decodes the latent distribution encoded by the encoder,
+            Has shape (batch_size, input_dim) where batch_size is the mini-batch size of the optimizer and
+            input_dim is the number of input nodes in the first layer of the encoder network
+        """
         # decoder_hidden shape=(batch_size, decoder_hidden_dim)
         decoder_hidden = self.decoder_hidden(z)
         # reconstruction shape=(batch_size, input_dim)
@@ -241,6 +286,31 @@ class VAE_EGDG(Model):
         return z
 
     def encode(self, inputs):
+        """ Encoder forward-propagation. Encodes input data into a latent distribution.
+
+        Parameters
+        -----------
+        inputs : tf.Tensor
+            Input data. Has shape (batch_size, input_dim) where batch_size is the mini-batch size of the optimizer and
+            input_dim is the number of input nodes in the first layer of the encoder network
+
+        Returns
+        -----------
+        mu : tf.Tensor
+            Expectation of encoded distribution (Gaussian so expectation is the mean) as vector.
+            Has shape (batch_size, latent_dim) where batch_size is the mini-batch size of the optimizer and
+            latent_dim is an argument to the class constructor denoting the number of latent dimensions
+
+        log_var : tf.Tensor
+            The log of the variance of encoded distribution as vector.
+            Has shape (batch_size, latent_dim) where batch_size is the mini-batch size of the optimizer and
+            latent_dim is an argument to the class constructor denoting the number of latent dimensions
+
+        z : tf.Tensor
+            latent vector sampled after encoding the data. Has shape (batch_size, latent_dim) where batch_size is the
+            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
+            number of latent dimensions
+        """
         # encoder_hidden shape=(batch_size, encoder_hidden_dim)
         encoder_hidden = self.encoder_hidden(inputs)
         # mu shape=(batch_size, latent_dim)
@@ -252,6 +322,36 @@ class VAE_EGDG(Model):
         return mu, log_var, z
 
     def decode(self, z):
+        """ Decoder forward-propagation. Decodes the latent distribution into the reconstruction of the input data.
+        This is the generative aspect of the VAE. Therefore, this function can be used to generate data from the
+        learned latent distribution.
+        The decoder of VAE_EGDG is Gaussian -> p_{theta}(x|z) = N(x; reconstruction_mu, exp(reconstruction_log_var)
+        where reconstruction_mu is the mean of the distribution in the Gaussian output layer (coming from one layer)
+        and exp(reconstruction_log_var) is the variance of the distribution in the Gaussian output layer
+        (coming from another layer). See Appendix C.
+
+        Parameters
+        -----------
+        z : tf.Tensor
+            latent vector sampled after encoding the data. Has shape (batch_size, latent_dim) where batch_size is the
+            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
+            number of latent dimensions
+
+        Returns
+        -----------
+        reconstruction_mu : tf.Tensor
+            The mean of the distribution in the Gaussian output layer (coming from one layer).
+            The decoder decodes the latent distribution encoded by the encoder,
+            Has shape (batch_size, input_dim) where batch_size is the mini-batch size of the optimizer and
+            input_dim is the number of input nodes in the first layer of the encoder network
+
+        reconstruction_log_var : tf.Tensor
+            exp(reconstruction_log_var) is the variance of the distribution in the Gaussian output layer
+            (coming from another layer).
+            The decoder decodes the latent distribution encoded by the encoder,
+            Has shape (batch_size, input_dim) where batch_size is the mini-batch size of the optimizer and
+            input_dim is the number of input nodes in the first layer of the encoder network
+        """
         # decoder_hidden shape=(batch_size, decoder_hidden_dim)
         decoder_hidden = self.decoder_hidden(z)
         # reconstruction_mu shape=(batch_size, input_dim)
@@ -302,179 +402,6 @@ class VAE_EGDG(Model):
         # In the case of the Gaussian output layer, reconstruction_mu is the expectation of the Gaussian distribution.
         # This is what we return as the reconstruction values in the output vector.
         return reconstruction_mu
-
-
-class VAE(Model):
-    """ Variational Auto-Encoder class via subclassing keras.Model.
-    """
-
-    def __init__(self, input_dim, encoder_hidden_dim, latent_dim, decoder_hidden_dim, decoder_type, name):
-        """ Init function of the VAE class.
-
-        Parameters
-        ----------
-        input_dim : int
-            The number of input dimensions, that is, the number of nodes in the first layer of the encoder and the
-            last, output layer of the decoder.
-
-        encoder_hidden_dim : int
-            The number of nodes in the hidden layer of the encoder.
-
-        latent_dim : int
-            The number of latent dimensions into which the VAE encodes the input data.
-
-        decoder_hidden_dim : int
-             The number of nodes in the hidden layer of the decoder.
-
-        decoder_type : str
-            Either bern for Bernoulli decoder -> negative log likelihood is binary cross entropy
-            or gauss for Gaussian decoder -> negative log-likelihood is - sum ( log N(mu, exp(log_var)) )
-
-        name : str
-            The name of the model.
-        """
-        # Inherit everything from keras.Model.
-        super(VAE, self).__init__(name=name)
-        # Decoder type.
-        if decoder_type in ["bern", "gauss"]:
-            self.decoder_type = decoder_type
-        else:
-            raise Exception(f"Invalid decoder_type: {decoder_type}")
-
-        # Xavier initialization (https://www.deeplearning.ai/ai-notes/initialization/, see towards the end of the
-        # article)
-        #self.initializer = tf.initializers.VarianceScaling(scale=2.0)
-        self.initializer = tf.initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None)
-        # Create the VAE layers.
-        self.encoder_hidden = Dense(
-            units=encoder_hidden_dim, activation="tanh", kernel_initializer=self.initializer)
-        self.mu = Dense(
-            latent_dim, kernel_initializer=self.initializer, name="mu")
-        self.log_var = Dense(
-            latent_dim, kernel_initializer=self.initializer, name="log_var")
-        self.z = Lambda(self.get_latent, output_shape=(latent_dim,), name="z")
-        self.decoder_hidden = Dense(
-            decoder_hidden_dim, activation='tanh', kernel_initializer=self.initializer)
-        # The decoder is a Bernoulli MLP. Has binary cross-entropy loss, see later.
-        if self.decoder_type == "bern":
-            self.reconstruction = \
-                Dense(input_dim, activation='sigmoid',
-                      kernel_initializer=self.initializer, name="reconstruction")
-        else:
-            self.reconstruction_mu = \
-                Dense(input_dim, activation='sigmoid',
-                      kernel_initializer=self.initializer, name="reconstruction_mu")
-            log_var_clip_val = 5
-            self.reconstruction_log_var = \
-                Dense(input_dim, activation=lambda v: kb.clip(v, -log_var_clip_val, log_var_clip_val),
-                      kernel_initializer=self.initializer, name="reconstruction_log_var")
-            #self.reconstruction_log_var = \
-            #    Dense(input_dim, kernel_initializer=self.initializer, name="reconstruction_log_var")
-
-    def get_latent(self, gauss_params):
-        """ Function to re-parametrize mu,log_var by sampling from Gaussian
-
-        Parameters
-        -----------
-        gauss_params : tf.Tensor
-           mu and log_var of q(z|x), both have shape (batch_size, latent_dim) where batch_size is the
-            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
-            number of latent dimensions
-
-        Returns
-        -----------
-        z : tf.Tensor
-            latent vector sampled after encoding the data. Has shape (batch_size, latent_dim) where batch_size is the
-            mini-batch size of the optimizer and latent_dim is an argument to the class constructor denoting the
-            number of latent dimensions
-        """
-        # Parameters of q(z|x) (equation 9)
-        mu, log_var = gauss_params
-
-        # Sample epsilon and calculate latent vector Z (equation 10)
-        eps = kb.random_normal(shape=(kb.shape(mu)[0], kb.shape(mu)[1]))
-        # standard deviation = sqrt(sigma) ; using the exponential assures that the result is positive
-        std = kb.exp(0.5*log_var)
-        z = mu + std * eps
-
-        return z
-
-    def encode(self, inputs):
-        # encoder_hidden shape=(batch_size, encoder_hidden_dim)
-        encoder_hidden = self.encoder_hidden(inputs)
-        # mu shape=(batch_size, latent_dim)
-        mu = self.mu(encoder_hidden)
-        # log_var shape=(batch_size, latent_dim)
-        log_var = self.log_var(encoder_hidden)
-        # z shape=(batch_size, latent_dim)
-        z = self.z([mu, log_var])
-        return mu, log_var, z
-
-    def decode(self, z):
-        # decoder_hidden shape=(batch_size, decoder_hidden_dim)
-        decoder_hidden = self.decoder_hidden(z)
-        # decoder_hidden shape=(batch_size, input_dim)
-        if self.decoder_type == "bern":
-            reconstruction = self.reconstruction(decoder_hidden)
-            return reconstruction
-        else:
-            reconstruction_mu = self.reconstruction_mu(decoder_hidden)
-            reconstruction_log_var = self.reconstruction_log_var(decoder_hidden)
-            return reconstruction_mu, reconstruction_log_var
-
-
-    def call(self, inputs):
-        """ Overrides the call function of keras.Model via subclassing. Gets called at each optimization step.
-        Parameters
-        ----------
-        inputs : tf.Tensor
-            Input data. Has shape (batch_size, input_dim) where batch_size is the mini-batch size of the optimizer and
-            input_dim is the number of input nodes in the first layer of the encoder network
-        Returns
-        -------
-        reconstruction : tf.Tensor
-            Reconstruction of the input data. Has shape (batch_size, input_dim) where batch_size is the mini-batch
-            size of the optimizer and input_dim is the number of input nodes in the first layer of the encoder network
-
-        """
-        # Attach model parts together (i.e.: create computation graph).
-        mu, log_var, z = self.encode(inputs)
-        if self.decoder_type == "bern":
-            reconstruction = self.decode(z)
-        else:
-            reconstruction_mu, reconstruction_log_var = self.decode(z)
-
-        # Create the loss tensors.
-        # Computes negative! KL Divergence Loss (First part of equation 24, but negative here to have -KLD)
-        negative_kl_loss = kb.mean(
-            0.5 * kb.sum(-log_var + kb.exp(log_var) + kb.square(mu) - 1, axis=1))
-        if self.decoder_type == "bern":
-            # Computes the Binary Cross-Entropy Loss that is equivalent to the negative binary loglikelihood
-            # (comes from the sigmoid activation function of the Bernoulli MLP layer in the decoder)
-            binary_cross_entropy_loss = \
-                    kb.mean(-kb.sum(inputs * kb.log(reconstruction + EPSILON) +
-                                    (1 - inputs) * kb.log(1 - reconstruction + EPSILON), axis=1))
-            negative_log_likelihood = binary_cross_entropy_loss
-        else:
-            # Compute negative log-likelihood of normal distribution.
-            #negative_mse = kb.mean(-kb.sum(kb.square(inputs - reconstruction_mu), axis=1))
-            x_prec = kb.exp(-reconstruction_log_var)
-            x_diff = inputs - reconstruction_mu
-            x_power = -0.5 * kb.square(x_diff) * x_prec
-            negative_log_likelihood = kb.mean(-kb.sum(-0.5 * (reconstruction_log_var + np.log(2 * np.pi)) + x_power, axis=1))
-            #negative_log_likelihood = negative_mse
-
-        # Create the overall VAE loss.
-        # ELBO in the paper is ELBO = KLD + Log_likelihood, ELBO in the paper is maximized
-        # We minimize the negative ELBO: - ELBO = - KLD - Log_likelihood = - KLD + BCE
-        vae_loss = negative_log_likelihood + negative_kl_loss
-
-        self.add_loss(vae_loss)
-        if self.decoder_type == "bern":
-            # Return the reconstructed observations.
-            return reconstruction
-        else:
-            return reconstruction_mu
 
 
 def plot_imgs_compare(n_imgs, x, y, x_reconstructed, save_img):
