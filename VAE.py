@@ -826,6 +826,46 @@ def plot_latent_space(vae, img_height, img_width, name, n=30, figsize=15):
     plt.show()
 
 
+def plot_clusters(vae, x_train, y_test, figsize = (12,10)):
+    """ Plots latent space. Note that it only works for a 2D latent space.
+    Source from https://keras.io/examples/generative/vae/.
+
+    Parameters
+    ----------
+    vae : Model
+        The trained VAE model.
+
+    x_train : np.ndarray
+        Training data set of shape (n_data, height, width)
+
+    y_test : np.ndarray or None
+        Validation labels of shape (n_data,) for mnist
+
+    figsize : tuple
+        Changes width & height in inches for plot, preset for now.
+
+    Returns
+    -------
+    None
+
+    """
+
+    # Vizualises encoded 2D digit clusters 
+    mu, logvar, z = vae.encode(x_train)
+    plt.figure(figsize=figsize) 
+    plt.scatter(mu[:,0], mu[:,1], c= y_test)
+    plt.colorbar()
+    plt.xlabel("")
+    plt.ylabel("")
+    plt.savefig("images/plot_clusters.png")
+    plt.show()
+
+
+
+
+
+
+
 if __name__ == "__main__":
     # Load dataset of choice - either mnist or frey.
     dataset_name = "frey"
@@ -907,6 +947,11 @@ if __name__ == "__main__":
     if latent_dim == 2:
         # Plot latent space. Only works for latent_dim=2, i.e.: 2D latent space.
         plot_latent_space(vae, img_height=height, img_width=width, name=name)
+
+    # Plot clusters, this implementation also only works for latent_dim=2.
+    plot_clusters(vae, x_train_flattened, y_train)
+
+
 
     """
     This part does not work yet.
