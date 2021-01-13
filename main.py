@@ -439,7 +439,7 @@ def plot_imgs_compare(n_imgs, x, y, x_reconstructed, save_img):
         y_show = y[idx_imgs]
     x_reconstructed_show = x_reconstructed[idx_imgs]
 
-    # Create figure
+    # Create figure.
     fig_height = n_imgs*5
     fig_width = 10
     fig, axs = plt.subplots(n_imgs, 2, figsize=(fig_height, fig_width))
