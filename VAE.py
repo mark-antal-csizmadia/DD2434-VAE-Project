@@ -4,9 +4,12 @@ from keras import backend as kb
 from keras.utils import plot_model
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import numpy as np
 import datetime
 import scipy.io
+import yaml
+import os
 
 # Global constants.
 # Epsilon: avoid numerical instability issues such as log(0) -> nan.
@@ -150,12 +153,16 @@ class VAE_EGDB(Model):
             The reconstruction of the input data. The decoder decodes the latent distribution encoded by the encoder,
             Has shape (batch_size, input_dim) where batch_size is the mini-batch size of the optimizer and
             input_dim is the number of input nodes in the first layer of the encoder network
+
+        None
+            Make sure different VAEs have the same number of elements returned be the decode function.
+            For plotting later.
         """
         # decoder_hidden shape=(batch_size, decoder_hidden_dim)
         decoder_hidden = self.decoder_hidden(z)
         # reconstruction shape=(batch_size, input_dim)
         reconstruction = self.reconstruction(decoder_hidden)
-        return reconstruction
+        return reconstruction, None
 
     def call(self, inputs):
         """ Overrides the call function of keras.Model via subclassing. Gets called at each optimization step.
@@ -173,7 +180,7 @@ class VAE_EGDB(Model):
         """
         # Attach model parts together (i.e.: create computation graph).
         mu, log_var, z = self.encode(inputs)
-        reconstruction = self.decode(z)
+        reconstruction, _ = self.decode(z)
 
         # Create the loss tensors.
         # Computes negative! KL Divergence Loss (First part of equation 24, but negative here to have -KLD)
@@ -190,7 +197,6 @@ class VAE_EGDB(Model):
         # ELBO in the paper is ELBO = KLD + Log_likelihood, ELBO in the paper is maximized
         # We minimize the negative ELBO: - ELBO = - KLD - Log_likelihood = - KLD + BCE (in the Bernoulli case)
         vae_loss = negative_log_likelihood + negative_kl_loss
-
         self.add_loss(vae_loss)
 
         # In the case of the Bernoulli output layer, reconstruction is the expectation of the Bernoulli distribution
@@ -253,7 +259,7 @@ class VAE_EGDG(Model):
         self.reconstruction_mu = \
             Dense(units=input_dim, activation='sigmoid', kernel_initializer=self.initializer, name="reconstruction_mu")
 
-        log_var_clip_val = 5
+        log_var_clip_val = 50
         self.reconstruction_log_var = \
             Dense(units=input_dim, activation=lambda v: kb.clip(v, -log_var_clip_val, log_var_clip_val),
                   kernel_initializer=self.initializer, name="reconstruction_log_var")
@@ -385,18 +391,19 @@ class VAE_EGDG(Model):
 
         # Compute negative log-likelihood of normal distribution. MSE does not seem to work!
         #negative_mse = kb.mean(-kb.sum(kb.square(inputs - reconstruction_mu), axis=1))
+        
         x_prec = kb.exp(-reconstruction_log_var)
         x_diff = inputs - reconstruction_mu
         x_power = -0.5 * kb.square(x_diff) * x_prec
         negative_log_likelihood = \
             kb.mean(-kb.sum(-0.5 * (reconstruction_log_var + np.log(2 * np.pi)) + x_power, axis=1))
+        
         #negative_log_likelihood = negative_mse
 
         # Create the overall VAE loss.
         # ELBO in the paper is ELBO = KLD + Log_likelihood, ELBO in the paper is maximized
         # We minimize the negative ELBO: - ELBO = - KLD - Log_likelihood (Log_likelihood is the log-likelihood of Gauss)
         vae_loss = negative_log_likelihood + negative_kl_loss
-
         self.add_loss(vae_loss)
 
         # In the case of the Gaussian output layer, reconstruction_mu is the expectation of the Gaussian distribution.
@@ -404,8 +411,8 @@ class VAE_EGDG(Model):
         return reconstruction_mu
 
 
-def plot_imgs_compare(n_imgs, x, y, x_reconstructed, save_img):
-    """ Overrides the call function of keras.Model via subclassing. Gets called at each optimization step.
+def plot_imgs_compare(n_imgs, x, y, x_reconstructed, fig_name):
+    """ Plots the reconstructed images vs. their ground-truth counterparts.
     Parameters
     ----------
     n_imgs : int
@@ -435,15 +442,17 @@ def plot_imgs_compare(n_imgs, x, y, x_reconstructed, save_img):
     n_imgs_all = x.shape[0]
     idx_imgs = np.random.choice(n_imgs_all, n_imgs)
     x_show = x[idx_imgs]
+    # If there are labels, use them. No labels in the case of frey.
     if y is not None:
         y_show = y[idx_imgs]
     x_reconstructed_show = x_reconstructed[idx_imgs]
 
     # Create figure.
-    fig_height = n_imgs*5
-    fig_width = 10
-    fig, axs = plt.subplots(n_imgs, 2, figsize=(fig_height, fig_width))
-    fig.tight_layout()
+    fig_height = n_imgs*2
+    fig_width = 2
+    gs1 = gridspec.GridSpec(n_imgs, 2)
+    gs1.update(wspace=0.005, hspace=0.05)  # set the spacing between axes.
+    fig, axs = plt.subplots(n_imgs, 2, figsize=(fig_width, fig_height))
 
     # Plot the subplots of the figure.
     for n_idx, _ in enumerate(idx_imgs):
@@ -451,21 +460,26 @@ def plot_imgs_compare(n_imgs, x, y, x_reconstructed, save_img):
         ax_right = axs[n_idx, 1]
         ax_left.imshow(x_reconstructed_show[n_idx])
         ax_right.imshow(x_show[n_idx])
-        ax_left.set_title(f"Reconstructed")
+        ax_left.set_title(f"Reconstr.")
+        # If there are labels, use them. No labels in the case of frey.
         if y is not None:
-            ax_right.set_title(f"Label: {y_show[n_idx]}")
+            ax_right.set_title(f"Input (l: {y_show[n_idx]})")
+        else:
+            ax_right.set_title("Input")
         ax_left.axis('off')
         ax_right.axis('off')
 
-    # Save image if desired.
-    if save_img:
-        plt.savefig("images/reconstruction.png")
+    # Tight layout.
+    #fig.tight_layout()
+
+    # Save image.
+    plt.savefig(os.path.join("images", fig_name))
 
     plt.show()
 
 
 def plot_lowerbound(history, neg_elbo_values, dataset_name, latent_dim, x_axis_label, x_axis_scale, n_data, epochs,
-                    ylim):
+                    ylim, fig_name):
     """ Plot likelihood lower bound. The loss curves of training and validation.
 
     Parameters
@@ -512,11 +526,13 @@ def plot_lowerbound(history, neg_elbo_values, dataset_name, latent_dim, x_axis_l
 
     # If neg_elbo_values is True, the ELBO is plotted as in the paper, that is,
     # negative values (ELBO is being maximized).
+    
     if neg_elbo_values:
         training_losses = [-training_loss for training_loss in training_losses]
         validation_losses = [-validation_loss for validation_loss in validation_losses]
     else:
         pass
+    
 
     # Select label on x-axis and convert x-axis values accordingly.
     if x_axis_label == "samples":
@@ -561,11 +577,11 @@ def plot_lowerbound(history, neg_elbo_values, dataset_name, latent_dim, x_axis_l
         plt.ylim(ylim[0], ylim[1])
 
     plt.legend(['train', 'val'], loc='upper left')
-    plt.savefig("images/lower_bound.png")
+    plt.savefig(os.path.join("images", fig_name))
     plt.show()
 
 
-def freyface_load_data(split_train=0.9):
+def freyface_load_data(split_train=0.8):
     """ Loads the Frey Faces data set.
 
     Parameters
@@ -636,7 +652,7 @@ def load_dataset(dataset_name):
         mnist = tf.keras.datasets.mnist
         (x_train, y_train), (x_test, y_test) = mnist.load_data()
     elif dataset_name == "frey":
-        (x_train, y_train), (x_test, y_test) = freyface_load_data(split_train=0.9)
+        (x_train, y_train), (x_test, y_test) = freyface_load_data(split_train=0.8)
     else:
         raise Exception(f"Invalid dataset_name: {dataset_name}")
 
@@ -677,7 +693,6 @@ def visualize_imgs(x, n_imgs=4):
     Returns
     -------
     None
-
     """
     n_imgs_all = x.shape[0]
     mask = np.random.choice(n_imgs, n_imgs_all)
@@ -690,7 +705,7 @@ def visualize_imgs(x, n_imgs=4):
     plt.show()
 
 
-def plot_latent_space(vae, img_height, img_width, name, n=30, figsize=15):
+def plot_latent_space(vae, img_height, img_width, fig_name, n=30, figsize=15):
     """ Plots latent space. Note that it only works for a 2D latent space.
     Source from https://keras.io/examples/generative/vae/.
 
@@ -711,7 +726,6 @@ def plot_latent_space(vae, img_height, img_width, name, n=30, figsize=15):
 
     """
     # display a n*n 2D manifold of digits
-    #digit_size = 28
     scale = 1.0
     figure = np.zeros((img_height * n, img_width * n))
     # linearly spaced coordinates corresponding to the 2D plot
@@ -722,10 +736,7 @@ def plot_latent_space(vae, img_height, img_width, name, n=30, figsize=15):
     for i, yi in enumerate(grid_y):
         for j, xi in enumerate(grid_x):
             z_sample = np.array([[xi, yi]])
-            if name == "VAE_EGDB":
-                x_decoded = vae.decode(z_sample)
-            else:
-                x_decoded, _ = vae.decode(z_sample)
+            x_decoded, _ = vae.decode(z_sample)
             digit = x_decoded.numpy().reshape(img_height, img_width)
             figure[
                 i * img_height : (i + 1) * img_height,
@@ -749,11 +760,83 @@ def plot_latent_space(vae, img_height, img_width, name, n=30, figsize=15):
     plt.xlabel("z[0]")
     plt.ylabel("z[1]")
     plt.imshow(figure, cmap="Greys_r")
-    plt.savefig("images/latent_space.png")
+    plt.savefig(os.path.join("images", fig_name))
     plt.show()
-    
 
-def plot_clusters(vae, x_train, y_test, figsize = (12,10)):
+
+def read_config(path_to_config):
+    """ Reads the config file in YAML format. Used to just be able to run the code with changing the config file.
+
+    Parameters
+    ----------
+    path_to_config : str
+        The path to the config file.
+
+    Returns
+    -------
+    config_dict : dict
+        A dictionary with the config parameters.
+    """
+    with open(path_to_config, 'r') as stream:
+        try:
+            config = yaml.safe_load(stream)
+        except yaml.YAMLError as e:
+            print(e)
+
+    dataset_name = config["data"]["dataset_name"]
+    assert dataset_name in ["frey", "mnist"], f"dataset_name has to be either frey or mnist (got {dataset_name})"
+    n_imgs = config["data"]["n_imgs"]
+
+    encoder_hidden_dim = config["vae"]["encoder_hidden_dim"]
+    latent_dim = config["vae"]["latent_dim"]
+    decoder_hidden_dim = config["vae"]["decoder_hidden_dim"]
+    name = config["vae"]["name"]
+    assert name in ["VAE_EGDG", "VAE_EGDB"], f"name has to be either VAE_EGDG or VAE_EGDB (got {name})"
+
+    lr = config["train"]["lr"]
+    assert not isinstance(lr, str), f"YAML has this bug that it cannot easily read in scientific notation, " \
+                                    f"so please input, for instance, 2e-2 as 0.02 (got {lr} of type {type(lr)}" \
+                                    f", should be float)"
+    epochs = config["train"]["epochs"]
+    batch_size = config["train"]["batch_size"]
+
+    neg_elbo_values = config["plot"]["neg_elbo_values"]
+    x_axis_label = config["plot"]["x_axis_label"]
+    assert x_axis_label in ["epochs", "samples"], \
+        f"x_axis_label has to be either epochs or samples (got {x_axis_label})"
+    x_axis_scale = config["plot"]["x_axis_scale"]
+    assert x_axis_scale in ["linear", "log"], f"x_axis_scale has to be either linear or log (got {x_axis_scale})"
+    ylim = config["plot"]["ylim_min"], config["plot"]["ylim_max"]
+    assert ylim[0] < ylim[1], f"ylim min has to be smaller than ylim max (got min {ylim[0]} and max {ylim[1]})"
+    n_imgs_rec = config["plot"]["n_imgs_rec"]
+
+    bernoulli_decoder_on_mnist = dataset_name == "mnist" and name == "VAE_EGDB"
+    gaussian_decoder_on_frey = dataset_name == "frey" and name == "VAE_EGDG"
+    assert bernoulli_decoder_on_mnist or gaussian_decoder_on_frey, \
+        f"name {name} and dataset_name {dataset_name} do not follow the paper " \
+        f"(should be Bernoulli decoder with MNIST, or Gaussian decoder with Frey face"
+
+    config_dict = \
+        {"dataset_name": dataset_name,
+         "n_imgs": n_imgs,
+         "encoder_hidden_dim": encoder_hidden_dim,
+         "latent_dim": latent_dim,
+         "decoder_hidden_dim": decoder_hidden_dim,
+         "name": name,
+         "lr": lr,
+         "epochs": epochs,
+         "batch_size": batch_size,
+         "neg_elbo_values": neg_elbo_values,
+         "x_axis_label": x_axis_label,
+         "x_axis_scale": x_axis_scale,
+         "ylim": ylim,
+         "n_imgs_rec":n_imgs_rec
+         }
+    print(f"config_dict: {config_dict}")
+    return config_dict
+
+
+def plot_clusters(vae, x_train, y_test, fig_name, figsize=(12, 10)):
     """ Plots latent space. Note that it only works for a 2D latent space.
     Source from https://keras.io/examples/generative/vae/.
 
@@ -776,69 +859,34 @@ def plot_clusters(vae, x_train, y_test, figsize = (12,10)):
     None
 
     """
-
-    # Vizualises encoded 2D digit clusters 
+    # Vizualises encoded 2D digit clusters
     mu, logvar, z = vae.encode(x_train)
-    plt.figure(figsize=figsize) 
+    plt.figure(figsize=figsize)
     plt.scatter(mu[:,0], mu[:,1], c= y_test)
     plt.colorbar()
     plt.xlabel("")
     plt.ylabel("")
-    plt.savefig("images/plot_clusters.png")
+    plt.savefig(os.path.join("images", fig_name))
     plt.show()
-
-
-def plot_clusters(vae, x_train, y_test, figsize = (12,10)):
-    """ Plots latent space. Note that it only works for a 2D latent space.
-    Source from https://keras.io/examples/generative/vae/.
-
-    Parameters
-    ----------
-    vae : Model
-        The trained VAE model.
-
-    x_train : np.ndarray
-        Training data set of shape (n_data, height, width)
-
-    y_test : np.ndarray or None
-        Validation labels of shape (n_data,) for mnist
-
-    figsize : tuple
-        Changes width & height in inches for plot, preset for now.
-
-    Returns
-    -------
-    None
-
-    """
-
-    # Vizualises encoded 2D digit clusters 
-    mu, logvar, z = vae.encode(x_train)
-    plt.figure(figsize=figsize) 
-    plt.scatter(mu[:,0], mu[:,1], c= y_test)
-    plt.colorbar()
-    plt.xlabel("")
-    plt.ylabel("")
-    plt.savefig("images/plot_clusters.png")
-    plt.show()
-
-
-
-
-
 
 
 if __name__ == "__main__":
+    # Get config.
+    path_to_config = "config.yml"
+    config_dict = read_config(path_to_config=path_to_config)
+
+    # Saved image identifier.
+    img_save_identifier = f"{config_dict['dataset_name']}_z{config_dict['latent_dim']}"
+
     # Load dataset of choice - either mnist or frey.
-    dataset_name = "frey"
-    (x_train, y_train), (x_test, y_test) = load_dataset(dataset_name=dataset_name)
+    (x_train, y_train), (x_test, y_test) = load_dataset(dataset_name=config_dict["dataset_name"])
     print(f"img shape: height = {x_train.shape[1]}, width = {x_train.shape[2]}")
     print(f"x_train has {x_train.shape[0]} imgs, x_test has {x_test.shape[0]} imgs")
 
     # Comment out if no visualization needed.
-    visualize_imgs(x=x_train, n_imgs=4)
+    visualize_imgs(x=x_train, n_imgs=config_dict["n_imgs"])
 
-    # Retrieve some params.
+    # Retrieve the number of images and the image dimensions.
     n_data, height, width = x_train.shape
     input_dim = height * width
 
@@ -848,54 +896,48 @@ if __name__ == "__main__":
     print(f"x_train_flattened.shape={x_train_flattened.shape}")
     print(f"x_test_flattened.shape={x_test_flattened.shape}")
 
-    # Create the VAE.
-    encoder_hidden_dim = 200
-    latent_dim = 20
-    decoder_hidden_dim = 200
-    #vae = VAE(input_dim=input_dim, encoder_hidden_dim=encoder_hidden_dim, latent_dim=latent_dim,
-    #          decoder_hidden_dim=decoder_hidden_dim, decoder_type="gauss", name="vae")
-
-    # Use VAE_EGDG for frey
-    # name used in plot_latent_space
-    name = "VAE_EGDG" # name = "VAE_EGDB" for mnist
-    vae = VAE_EGDG(input_dim=input_dim, encoder_hidden_dim=encoder_hidden_dim, latent_dim=latent_dim,
-                   decoder_hidden_dim=decoder_hidden_dim, name=name)
-    # Plot model if wanted. Something is not okay with this now, leave it commented.
+    # Create the VAE (depending on config option).
+    if config_dict["name"] == "VAE_EGDB":
+        vae = VAE_EGDB(input_dim=input_dim,
+                       encoder_hidden_dim=config_dict["encoder_hidden_dim"],
+                       latent_dim=config_dict["latent_dim"],
+                       decoder_hidden_dim=config_dict["decoder_hidden_dim"],
+                       name=config_dict["name"])
+    else:
+        vae = VAE_EGDG(input_dim=input_dim,
+                       encoder_hidden_dim=config_dict["encoder_hidden_dim"],
+                       latent_dim=config_dict["latent_dim"],
+                       decoder_hidden_dim=config_dict["decoder_hidden_dim"],
+                       name=config_dict["name"])
+    # Plot model if wanted.
     # plot_model(vae, to_file='vae_viz.png', show_shapes=True)
 
     # Create optimizer.
     # Paper: Stepsizes were adapted with Adagrad [DHS10]; the Adagrad global stepsize parameters were chosen
     # from {0.01,0.02, 0.1} based on performance on the training set in the first few iterations.
-    lrs = [1e-2, 2e-2, 10e-2]
-    optimizer = tf.keras.optimizers.Adagrad(learning_rate=lrs[1])
+    # Use Adam that has built-in weight-decay.
+    optimizer = tf.keras.optimizers.Adam(learning_rate=config_dict["lr"])
 
     # Compile model.
     vae.compile(optimizer)
 
     # Fit model.
-    epochs = 10000
-    # Paper: Minibatches of size M = 100 were used
-    batch_size = 100
     history = vae.fit(x_train_flattened, x_train_flattened,
-                      epochs=epochs, batch_size=batch_size, shuffle=True,
+                      epochs=config_dict["epochs"], batch_size=config_dict["batch_size"], shuffle=True,
                       validation_data=(x_test_flattened, x_test_flattened))
 
     # Plot losses.
-    neg_elbo_values = True
-    x_axis_label = "samples"
-    x_axis_scale = "log"
-    ylim = (0, 1600)
-
     plot_lowerbound(
         history=history,
-        neg_elbo_values=neg_elbo_values,
-        dataset_name=dataset_name,
-        latent_dim=latent_dim,
-        x_axis_label=x_axis_label,
-        x_axis_scale=x_axis_scale,
+        neg_elbo_values=config_dict["neg_elbo_values"],
+        dataset_name=config_dict["dataset_name"],
+        latent_dim=config_dict["latent_dim"],
+        x_axis_label=config_dict["x_axis_label"],
+        x_axis_scale=config_dict["x_axis_scale"],
         n_data=n_data,
-        epochs=epochs,
-        ylim=ylim)
+        epochs=config_dict["epochs"],
+        ylim=config_dict["ylim"],
+        fig_name=f"lower_bound_{img_save_identifier}.png")
 
     # Reconstruct training data.
     x_train_reconstructed_flattened = vae.predict(x_train_flattened)
@@ -903,37 +945,12 @@ if __name__ == "__main__":
         n_data, height, width)
 
     # Visualize the reconstructed images.
-    plot_imgs_compare(n_imgs=10, x=x_train, y=y_train,
-                      x_reconstructed=x_train_reconstructed, save_img=True)
+    plot_imgs_compare(n_imgs=config_dict["n_imgs_rec"], x=x_train, y=y_train,
+                      x_reconstructed=x_train_reconstructed, fig_name=f"reconstruction_{img_save_identifier}.png")
 
-    if latent_dim == 2:
+    if config_dict["latent_dim"] == 2:
         # Plot latent space. Only works for latent_dim=2, i.e.: 2D latent space.
-        plot_latent_space(vae, img_height=height, img_width=width, name=name)
+        plot_latent_space(vae, img_height=height, img_width=width, fig_name=f"latent_space_{img_save_identifier}.png")
         # Plot clusters, this implementation also only works for latent_dim=2.
-        plot_clusters(vae, x_train_flattened, y_train)
-
-
-
-
-    """
-    This part does not work yet.
-    # This part shows how to save a model and then use it for inference again without further training. A saved model
-    # can be further trained as well.
-    st = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    model_name = "vae"
-    vae.save(model_name)
-
-    # It can be used to reconstruct the model identically.
-    #vae_reconstructed = load_model(model_name)
-    # It's tricky to save and load models with Lambda layers.
-    vae_reconstructed = load_model(model_name, custom_objects={'get_latent': VAE.get_latent})
-
-    # Let's check:
-    test_input = x_train_flattened[:10]
-    test_target = y_train[:10]
-    np.testing.assert_allclose(vae.predict(test_input), vae_reconstructed.predict(test_input))
-
-    # The reconstructed model is already compiled and has retained the optimizer
-    # state, so training can resume:
-    vae_reconstructed.fit(test_input, test_target)
-    test_input_reconstructed = vae_reconstructed.predict(test_input)"""
+        plot_clusters(vae=vae, x_train=x_train_flattened, y_test=y_train,
+                      fig_name=f"plot_clusters_{img_save_identifier}.png")

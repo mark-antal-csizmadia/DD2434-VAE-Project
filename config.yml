@@ -1,0 +1,36 @@
+data:
+  # The name of the dataset, either mnist or frey
+  dataset_name: mnist
+  # The number of sample images to show before training
+  n_imgs: 4
+vae:
+  # The number of nodes in the hidden layer of the encoder network
+  encoder_hidden_dim: 500
+  # The number of dimensions of the latent vector
+  latent_dim: 5
+  # The number of nodes in the hidden layer of the decoder network
+  decoder_hidden_dim: 500
+  # The name of the VAE class, either VAE_EGDG (encoder Gaussian, decoder Gaussian, for frey) or
+  # VAE_EGDB (encoder Gaussian, decoder Bernoulli, for mnist)
+  name: VAE_EGDB
+train:
+  # The learning rate of the optimizer.
+  lr: 0.001
+  # The number of epochs to train for.
+  epochs: 1000
+  # The number of instances in a mini-batch of the optimizer.
+  batch_size: 100
+plot:
+  # Whether to invert the ELBO values (we minimize what they maximize in the paper, so to get similar plots, we
+  # need to invert them.
+  neg_elbo_values: True
+  # The x-axis label and type, either epochs or samples
+  x_axis_label: samples
+  # The scale of the x-axis, either linear or log
+  x_axis_scale: log
+  # The min of the y-lim in plotting the ELBO
+  ylim_min: -200
+  # The max of the y-lim in plotting the ELBO
+  ylim_max: -100
+  # The number of reconstructed images to plot. 10 is the most space-wise.
+  n_imgs_rec: 10
