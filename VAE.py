@@ -1,3 +1,6 @@
+""" Contributors: Diogo Pinheiro, Jakob Lindén, Márk Csizmadia, Patrick Jonsson
+"""
+
 from keras.layers import Dense, Lambda
 from keras.models import Model, load_model
 from keras import backend as kb
@@ -22,10 +25,12 @@ class VAE_EGDB(Model):
     Encoder is Gaussian -> q_{phi}(z|x) = N(z; mu, exp(log_var))
     Decoder is Bernoulli -> p_{theta}(x|z) = Bern(p) where p technically a probability value corresponding to each
     value in the input_dim elements of the output Tensor. See Appendix C
+    Contributed: Diogo Pinheiro, Jakob Lindén, Márk Csizmadia, Patrick Jonsson
     """
 
     def __init__(self, input_dim, encoder_hidden_dim, latent_dim, decoder_hidden_dim, name):
         """ Init function of the VAE class.
+        Contributed: Jakob Lindén, Patrick Jonsson
 
         Parameters
         ----------
@@ -72,6 +77,7 @@ class VAE_EGDB(Model):
 
     def get_latent(self, gauss_params):
         """ Function to re-parametrize mu,log_var by sampling from Gaussian
+        Contributed: Diogo Pinheiro
 
         Parameters
         -----------
@@ -99,6 +105,7 @@ class VAE_EGDB(Model):
 
     def encode(self, inputs):
         """ Encoder forward-propagation. Encodes input data into a latent distribution.
+        Contributed: Patrick Jonsson
 
         Parameters
         -----------
@@ -139,6 +146,7 @@ class VAE_EGDB(Model):
         learned latent distribution.
         The decoder of VAE_EGDB is Bernoulli -> p_{theta}(x|z) = Bern(p) where p is technically a probability value
         corresponding to each value in the input_dim elements of the output Tensor. See Appendix C
+        Contributed: Márk Csizmadia
 
         Parameters
         -----------
@@ -166,6 +174,8 @@ class VAE_EGDB(Model):
 
     def call(self, inputs):
         """ Overrides the call function of keras.Model via subclassing. Gets called at each optimization step.
+        Contributed: Jakob Lindén, Diogo Pinheiro
+
         Parameters
         ----------
         inputs : tf.Tensor
@@ -213,9 +223,11 @@ class VAE_EGDG(Model):
     where reconstruction_mu is the mean of the distribution in the Gaussian output layer (coming from one layer)
     and exp(reconstruction_log_var) is the variance of the distribution in the Gaussian output layer
     (coming from another layer). See Appendix C.
+    Contributed: Diogo Pinheiro, Jakob Lindén, Márk Csizmadia, Patrick Jonsson
     """
     def __init__(self, input_dim, encoder_hidden_dim, latent_dim, decoder_hidden_dim, name):
         """ Init function of the VAE class.
+        Contributed: Jakob Lindén, Patrick Jonsson
 
         Parameters
         ----------
@@ -266,6 +278,7 @@ class VAE_EGDG(Model):
 
     def get_latent(self, gauss_params):
         """ Function to re-parametrize mu,log_var by sampling from Gaussian
+        Contributed: Diogo Pinheiro
 
         Parameters
         -----------
@@ -293,6 +306,7 @@ class VAE_EGDG(Model):
 
     def encode(self, inputs):
         """ Encoder forward-propagation. Encodes input data into a latent distribution.
+        Contributed: Patrick Jonsson
 
         Parameters
         -----------
@@ -335,6 +349,7 @@ class VAE_EGDG(Model):
         where reconstruction_mu is the mean of the distribution in the Gaussian output layer (coming from one layer)
         and exp(reconstruction_log_var) is the variance of the distribution in the Gaussian output layer
         (coming from another layer). See Appendix C.
+        Contributed: Márk Csizmadia
 
         Parameters
         -----------
@@ -368,6 +383,8 @@ class VAE_EGDG(Model):
 
     def call(self, inputs):
         """ Overrides the call function of keras.Model via subclassing. Gets called at each optimization step.
+        Contributed: Diogo Pinheiro, Jakob Lindén, Márk Csizmadia, Patrick Jonsson
+
         Parameters
         ----------
         inputs : tf.Tensor
@@ -413,6 +430,8 @@ class VAE_EGDG(Model):
 
 def plot_imgs_compare(n_imgs, x, y, x_reconstructed, fig_name):
     """ Plots the reconstructed images vs. their ground-truth counterparts.
+    Contributed: Diogo Pinheiro, Jakob Lindén, Márk Csizmadia
+
     Parameters
     ----------
     n_imgs : int
@@ -481,6 +500,7 @@ def plot_imgs_compare(n_imgs, x, y, x_reconstructed, fig_name):
 def plot_lowerbound(history, neg_elbo_values, dataset_name, latent_dim, x_axis_label, x_axis_scale, n_data, epochs,
                     ylim, fig_name):
     """ Plot likelihood lower bound. The loss curves of training and validation.
+    Contributed: Diogo Pinheiro, Jakob Lindén, Márk Csizmadia, Patrick Jonsson
 
     Parameters
     ----------
@@ -583,6 +603,7 @@ def plot_lowerbound(history, neg_elbo_values, dataset_name, latent_dim, x_axis_l
 
 def freyface_load_data(split_train=0.8):
     """ Loads the Frey Faces data set.
+    Contributed: Jakob Lindén
 
     Parameters
     ----------
@@ -627,6 +648,7 @@ def freyface_load_data(split_train=0.8):
 
 def load_dataset(dataset_name):
     """ Wrapper function for loading a data set.
+    Contributed: Patrick Jonsson
 
     Parameters
     ----------
@@ -661,6 +683,7 @@ def load_dataset(dataset_name):
 
 def pre_process_dataset(x):
     """ Pre-processes data set - flattening and normalizing.
+    Contributed: Jakob Lindén, Márk Csizmadia, Patrick Jonsson
 
     Parameters
     ----------
@@ -681,6 +704,7 @@ def pre_process_dataset(x):
 
 def visualize_imgs(x, n_imgs=4):
     """ Pre-processes data set - flattening and normalizing.
+    Contributed: Diogo Pinheiro, Jakob Lindén, Márk Csizmadia, Patrick Jonsson
 
     Parameters
     ----------
@@ -708,6 +732,7 @@ def visualize_imgs(x, n_imgs=4):
 def plot_latent_space(vae, img_height, img_width, fig_name, n=30, figsize=15):
     """ Plots latent space. Note that it only works for a 2D latent space.
     Source from https://keras.io/examples/generative/vae/.
+    Contributed: Diogo Pinheiro, Jakob Lindén, Márk Csizmadia, Patrick Jonsson
 
     Parameters
     ----------
@@ -766,6 +791,7 @@ def plot_latent_space(vae, img_height, img_width, fig_name, n=30, figsize=15):
 
 def read_config(path_to_config):
     """ Reads the config file in YAML format. Used to just be able to run the code with changing the config file.
+    Contributed: Diogo Pinheiro, Jakob Lindén, Patrick Jonsson
 
     Parameters
     ----------
@@ -839,6 +865,7 @@ def read_config(path_to_config):
 def plot_clusters(vae, x_train, y_test, fig_name, figsize=(12, 10)):
     """ Plots latent space. Note that it only works for a 2D latent space.
     Source from https://keras.io/examples/generative/vae/.
+    Contributed: Patrick Jonsson
 
     Parameters
     ----------
@@ -871,6 +898,7 @@ def plot_clusters(vae, x_train, y_test, fig_name, figsize=(12, 10)):
 
 
 if __name__ == "__main__":
+    # Contributed: Diogo Pinheiro, Jakob Lindén, Márk Csizmadia, Patrick Jonsson
     # Get config.
     path_to_config = "config.yml"
     config_dict = read_config(path_to_config=path_to_config)
