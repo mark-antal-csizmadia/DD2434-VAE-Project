@@ -7,7 +7,7 @@ vae:
   # The number of nodes in the hidden layer of the encoder network
   encoder_hidden_dim: 500
   # The number of dimensions of the latent vector
-  latent_dim: 5
+  latent_dim: 20
   # The number of nodes in the hidden layer of the decoder network
   decoder_hidden_dim: 500
   # The name of the VAE class, either VAE_EGDG (encoder Gaussian, decoder Gaussian, for frey) or
@@ -31,6 +31,6 @@ plot:
   # The min of the y-lim in plotting the ELBO
   ylim_min: -200
   # The max of the y-lim in plotting the ELBO
-  ylim_max: -100
+  ylim_max: -50
   # The number of reconstructed images to plot. 10 is the most space-wise.
   n_imgs_rec: 10
