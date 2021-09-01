@@ -1,8 +1,13 @@
 # DD2434-VAE-Project (Re-Autoencoding Variational Bayes)
 
-Small Project in DD2434 Advanced Machine Learning by Diogo Pinheiro, Jakob Lindén, Márk Csizmadia, and Patrick Jonsson.
+Project in DD2434 Advanced Machine Learning to reproduce the paper title [Auto-Encoding Variational Bayes](https://arxiv.org/abs/1312.6114). See the reproduced results in the report (some are also located at  ```images/```). The project was done by:
 
-## Installation
+- [Diogo Pinheiro](https://github.com/DiogorPinheiro)
+- [Jakob Lindén](https://github.com/jakobGTO)
+- [Patrick Jonsson](https://github.com/hiver-py)
+- [Márk Antal Csizmadia](https://github.com/mark-antal-csizmadia)
+
+## Installation and Usage
 
 In the CLI of your choice
 
@@ -18,9 +23,7 @@ source activate dd2434_vae_project
 pip install -r requirements.txt
 ```
 
-## Usage
-
-Use the main script to train a Variational Auto-Encoder (VAE). Set the encoder and decoder network parameters, the training parameters (e.g.: learning rate) the type of decoder (Bernoulli or Gaussian) and the data set (MNIST or Frey face) in the code.
+Use the ```config.yml``` configuration file to train a Variational Auto-Encoder (VAE), with desired encoder and decoder network parameters and decoder type (Bernoulli or Gaussian), training parameters (e.g.: learning rate) and the data set (MNIST or Frey face). Then run the main script ```VAE.py``` as follows:
 
 ```bash
 cd DD2434-VAE-Project
@@ -28,6 +31,22 @@ python main.py
 ```
 
 
-## Description
+## Results
 
-The code is a replication of the research paper titled Auto-Encoding Variational Bayes (https://arxiv.org/abs/1312.6114). See the reproduced results in the report (some are also located at  images/).
+Some of the results are shown below.
+
+The two-dimensional latent space in the case of the MNIST dataset:
+
+![alt text](images/latent_space_mnist_z2.png)
+
+The two-dimensional latent space in the case of the Frey face dataset:
+
+![alt text](images/latent_space_frey_z2.png)
+
+The variational lower bound in the case of the MNIST dataset with a 20-dimensional latent space:
+
+![alt text](images/lower_bound_mnist_z20.png)
+
+The variational lower bound in the case of the Frey face dataset with a 20-dimensional latent space:
+
+![alt text](images/lower_bound_frey_z20.png)
