@@ -27,7 +27,7 @@ Use the ```config.yml``` configuration file to train a Variational Auto-Encoder 
 
 ```bash
 cd DD2434-VAE-Project
-python main.py
+python VAE.py
 ```
 
 
